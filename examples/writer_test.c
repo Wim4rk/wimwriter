@@ -4,64 +4,87 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <stdbool.h>
+#include <string.h>
 #include "../lib/Fonts/fonts.h"
 
-// Vi inkluderar Waveshares egna headers för att prata med skärmen
+// Include Waveshare hardware configuration and e-Paper drivers
 #include "../lib/Config/DEV_Config.h"
 #include "../lib/e-Paper/EPD_IT8951.h"
 
 int main(int argc, char *argv[]) {
-    // 1. Initiera hårdvaran och SPI-bussen via Waveshares bibliotek
+    // 1. Initialize hardware module and SPI communication
     if (DEV_Module_Init() != 0) {
-        printf("Kunde inte initiera hårdvarumodulen!\n");
+        printf("Failed to initialize hardware module!\n");
         return EXIT_FAILURE;
     }
 
-    // Sätt VCOM manuellt (-2.14 V -> -2140 mV)
+    // Set VCOM manually (-2.14 V -> -2140 mV)
     double vcom = -2.14;
     UWORD vcom_mv = (UWORD)(vcom * -1000); 
 
-    printf("Initierar skärmen med VCOM: -%.2f V (%d mV)...\n", -vcom, vcom_mv);
+    printf("Initializing display with VCOM: -%.2f V (%d mV)...\n", -vcom, vcom_mv);
     
-    // Denna funktion hämtar skärmens info och sätter VCOM
+    // Get device info and apply VCOM settings
     IT8951_Dev_Info dev_info = EPD_IT8951_Init(vcom_mv);
     
-    // Räkna ut den fullständiga 32-bitars måladressen i IT8951:s RAM
+    // Calculate the full 32-bit target memory address in IT8951 VRAM
     UDOUBLE target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
 
-    // Rensar skärmen till vit (0xFF) i det säkra, högkvalitativa GC16-läget vid uppstart
-    printf("Rensar skärmen...\n");
+    // Clear display to pure white (0xFF) using the high-quality GC16 mode at startup
+    printf("Clearing screen...\n");
     EPD_IT8951_Clear_Refresh(dev_info, target_addr, GC16_Mode);
 
-    // =================================================================
-    // INITIALISERA GLYPH CACHE (TECKENKARTA) I VRAM
-    // =================================================================
-    printf("Bygger glyph-cache för Font20 (inkl. Å, Ä, Ö, é, à)...\n");
+    // 2. Open the keyboard input device (event0)
+    const char *kbd_dev = "/dev/input/event0";
+    int kbd_fd = open(kbd_dev, O_RDONLY);
+    if (kbd_fd == -1) {
+        perror("Failed to open keyboard device! Did you run with sudo?");
+        DEV_Module_Exit();
+        return EXIT_FAILURE;
+    }
 
-    // RIKTIG LYSSNINGSLOOP (while istället för if)
+    printf("Display ready (%dx%d) and keyboard connected!\n", dev_info.Panel_W, dev_info.Panel_H);
+    printf("Type on the keyboard to test rendering (A, B, C, Å, Ä, Ö)...\n");
+    printf("Press Ctrl+C in terminal to exit.\n");
+
+    // Define initial typewriter cursor coordinates
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    struct input_event ev;
+
+    // Main keyboard event listener loop
     while (read(kbd_fd, &ev, sizeof(struct input_event)) > 0) {
-	if (ev.type == EV_KEY && ev.value == 1) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+                
             int ascii_char = 32;
                 
+            // Keycode translation to custom font ASCII indexes
             if (ev.code == 30) ascii_char = 'a'; 
             else if (ev.code == 48) ascii_char = 'b'; 
             else if (ev.code == 46) ascii_char = 'c'; 
-            else if (ev.code == 39) ascii_char = 131; // Å
-            else if (ev.code == 40) ascii_char = 132; // Ä
-            else if (ev.code == 43) ascii_char = 133; // Ö
+            else if (ev.code == 39) ascii_char = 131; // Custom mapping for Å
+            else if (ev.code == 40) ascii_char = 132; // Custom mapping for Ä
+            else if (ev.code == 43) ascii_char = 133; // Custom mapping for Ö
             else ascii_char = 32; 
 
-            int cache_index = ascii_char - 32;
-            UBYTE single_char_buf[Font20.Width * Font20.Height];
-            
-            // Nollställ bufferten till VIT (0xFF) innan vi ritar bokstaven
-            for(int i = 0; i < Font20.Width * Font20.Height; i++) {
-                single_char_buf[i] = 0xFF;
+            printf("\n--- Debugging ASCII Char: %d ('%c') ---\n", ascii_char, (ascii_char >= 32 && ascii_char <= 126) ? ascii_char : '?');
+
+            // 1. Extract the glyph bitmap from Font20 into a temporary local 8bpp buffer
+	    int cache_index = ascii_char - 32;
+
+            // FIX: Changed from UBYTE to UWORD (16-bit) to match IT8951 SPI word expectations
+            UWORD single_char_buf[Font20.Width * Font20.Height];
+
+            // Clear buffer to white (0x00FF inside a 16-bit word represents white in 8bpp)
+            for (int i = 0; i < Font20.Width * Font20.Height; i++) {
+                single_char_buf[i] = 0x00FF;
             }
-            
+
             int bytes_per_char = ((Font20.Width + 7) / 8) * Font20.Height;
             const UBYTE *ptr = &Font20.table[cache_index * bytes_per_char];
 
+            // Unpack bits from font table and print a live preview in the terminal window
             for (int y = 0; y < Font20.Height; y++) {
                 UBYTE byte1 = ptr[y * 2];
                 UBYTE byte2 = ptr[y * 2 + 1];
@@ -69,19 +92,27 @@ int main(int argc, char *argv[]) {
 
                 for (int x = 0; x < Font20.Width; x++) {
                     if ((row_bits << x) & 0x8000) {
-                        single_char_buf[y * Font20.Width + x] = 0x00; // Svart
+                        single_char_buf[y * Font20.Width + x] = 0x0000; // Black pixel (16-bit)
+                        printf("#");
+                    } else {
+                        printf(".");
                     }
                 }
+                printf("\n");
             }
+            printf("---------------------------------------\n");
 
+            // 2. Calculate target position on screen (adjusted for current rotation layout)
             int target_x = dev_info.Panel_W - cursor_x - Font20.Width;
             int target_y = dev_info.Panel_H - cursor_y - Font20.Height;
 
+            // 3. Write glyph pixels to the IT8951 VRAM buffer
             IT8951_Load_Img_Info draw_load;
             draw_load.Endian_Type = 0;
-            draw_load.Pixel_Format = 2; // RÄTTAD: 2 betyder 8-bpp gråskala i IT8951!
+            draw_load.Pixel_Format = 2; // 2 explicitly defines 8-bpp grayscale mode for IT8951
             draw_load.Rotate = 0;
-            draw_load.Source_Buffer_Addr = single_char_buf;
+            // FIX: Cast pointer to UBYTE* because the struct definition expects UBYTE* // even though the data layout must be 16-bit aligned words!
+            draw_load.Source_Buffer_Addr = (UBYTE*)single_char_buf;
             draw_load.Target_Memory_Addr = target_addr;
 
             IT8951_Area_Img_Info draw_area;
@@ -92,15 +123,28 @@ int main(int argc, char *argv[]) {
 
             EPD_IT8951_HostAreaPackedPixelWrite_8bp(&draw_load, &draw_area);
 
-            // Använd din fungerande AreaBuf för att tvinga skärmen att visa minnet
-            EPD_IT8951_Display_AreaBuf(target_x, target_y, Font20.Width, Font20.Height, A2_Mode, target_addr);
+            // 4. Trigger localized low-latency refresh using fast A2 mode from internal VRAM
+            EPD_IT8951_Display_AreaBuf(
+                target_x, 
+                target_y, 
+                Font20.Width, 
+                Font20.Height, 
+                A2_Mode, 
+                target_addr
+            );
 
+            // 5. Advance typewriter cursor horizontally
             cursor_x += Font20.Width;
 
+            // Simple line break handler when reaching the right edge (100px margin)
             if (cursor_x + Font20.Width > dev_info.Panel_W - 100) {
-    }
-    
-    // Stäng allt snyggt (Körs om loopen mot förmodan skulle avbrytas)
+                cursor_x = 100;
+                cursor_y += (Font20.Height + 4); // 4px line spacing
+            }
+        }
+    } 
+
+    // Clean up resources upon exit
     close(kbd_fd);
     DEV_Module_Exit();
     return 0;
