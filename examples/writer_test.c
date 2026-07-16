@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
 
     // RIKTIG LYSSNINGSLOOP (while istället för if)
     while (read(kbd_fd, &ev, sizeof(struct input_event)) > 0) {
-	if (ev.type == EV_KEY && ev.value == 1) {
+        if (ev.type == EV_KEY && ev.value == 1) {
                 
             int ascii_char = 32;
                 
@@ -104,11 +104,8 @@ int main(int argc, char *argv[]) {
             else if (ev.code == 43) ascii_char = 133; // Ö
             else ascii_char = 32; 
 
-            // 1. Hitta var bokstaven bor i vår lokala char_buffer-struktur
-            // Istället för att gissa VRAM-adresser skapar vi en direkt pekare till rätt tecken
+            // 1. Packa upp bitmappen från Font20 för JUST denna bokstav till en temporär 8bpp-buffert
             int cache_index = ascii_char - 32;
-            
-            // Vi packar upp just detta tecken till en lokal liten sub-buffert för överföring
             UBYTE single_char_buf[Font20.Width * Font20.Height];
             
             int bytes_per_char = ((Font20.Width + 7) / 8) * Font20.Height;
@@ -128,32 +125,47 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-	    // 2. Beräkna målposition på skärmen
+            // 2. Beräkna målposition på skärmen (Roterat och klart)
             int target_x = dev_info.Panel_W - cursor_x - Font20.Width;
             int target_y = dev_info.Panel_H - cursor_y - Font20.Height;
 
-            // 3 & 4. Skicka pixlar och uppdatera skärmen i ETT anrop!
-            // Vi använder gränssnittet som fungerade för dina block,
-            // men skickar vår nya teckenbuffert istället för blockbufferten.
+            // 3. Skriv bokstavens pixlar till skärmens VRAM-buffert på rätt koordinater
+            IT8951_Load_Img_Info draw_load;
+            draw_load.Endian_Type = 0;
+            draw_load.Pixel_Format = 8; // 8-bitars gråskala
+            draw_load.Rotate = 0;
+            draw_load.Source_Buffer_Addr = single_char_buf;
+            draw_load.Target_Memory_Addr = target_addr;
+
+            IT8951_Area_Img_Info draw_area;
+            draw_area.Area_X = target_x;
+            draw_area.Area_Y = target_y;
+            draw_area.Area_W = Font20.Width;
+            draw_area.Area_H = Font20.Height;
+
+            EPD_IT8951_HostAreaPackedPixelWrite_8bp(&draw_load, &draw_area);
+
+            // 4. BE SKÄRMEN ATT UPPDATERA DETTA OMRÅDE FRÅN SITT INTERNA MINNE (target_addr)
             EPD_IT8951_Display_AreaBuf(
-                target_x,
-                target_y,
-                Font20.Width,
-                Font20.Height,
-                A2_Mode,
-                (UDOUBLE)(uintptr_t)single_char_buf
+                target_x, 
+                target_y, 
+                Font20.Width, 
+                Font20.Height, 
+                A2_Mode, 
+                target_addr
             );
 
             // 5. Flytta markören framåt
             cursor_x += Font20.Width;
 
+            // Radbrytning om vi når kanten (marginal på 100 pixlar)
             if (cursor_x + Font20.Width > dev_info.Panel_W - 100) {
                 cursor_x = 100;
                 cursor_y += (Font20.Height + 4);
             }
         }
     }
-
+    
     // Stäng allt snyggt (Körs om loopen mot förmodan skulle avbrytas)
     close(kbd_fd);
     DEV_Module_Exit();
