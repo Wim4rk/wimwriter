@@ -68,21 +68,28 @@ int main(int argc, char *argv[]) {
             else if (ev.code == 43) ascii_char = 133; // Custom mapping for Ö
             else ascii_char = 32; 
 
-            printf("\n--- Debugging ASCII Char: %d ('%c') ---\n", ascii_char, (ascii_char >= 32 && ascii_char <= 126) ? ascii_char : '?');
+            // Skip spaces or unmapped keys for this test
+            if (ascii_char == 32) {
+                continue;
+            }
 
-            // 1. Extract the glyph bitmap from Font20 into a temporary local 8bpp buffer
-	    int cache_index = ascii_char - 32;
+            printf("\n--- Rendering ASCII Char: %d ---\n", ascii_char);
+
+            // Allocate a 16-bit buffer. Since Width is 14, we need 14/2 = 7 UWORDs per row.
+            // Total size: (Width / 2) * Height
+            int words_per_row = Font20.Width / 2;
+            UWORD single_char_buf[words_per_row * Font20.Height];
             
-            // Reverted back to UBYTE (8-bit per pixel) as expected by the _8bp function
-            UBYTE single_char_buf[Font20.Width * Font20.Height];
+            // Initialize buffer to pure white (0xFFFF means two white pixels side-by-side)
+            for (int i = 0; i < words_per_row * Font20.Height; i++) {
+                single_char_buf[i] = 0xFFFF;
+            }
             
-            // Clear buffer to white. 0xF0 represents white in 4-bit/8-bit hybrid IT8951 VRAM
-            memset(single_char_buf, 0xF0, sizeof(single_char_buf));
-            
+            int cache_index = ascii_char - 32;
             int bytes_per_char = ((Font20.Width + 7) / 8) * Font20.Height;
             const UBYTE *ptr = &Font20.table[cache_index * bytes_per_char];
 
-            // Unpack bits from font table and print a live preview in the terminal window
+            // Unpack font matrix bits into the packed 16-bit structure
             for (int y = 0; y < Font20.Height; y++) {
                 UBYTE byte1 = ptr[y * 2];
                 UBYTE byte2 = ptr[y * 2 + 1];
@@ -90,26 +97,29 @@ int main(int argc, char *argv[]) {
 
                 for (int x = 0; x < Font20.Width; x++) {
                     if ((row_bits << x) & 0x8000) {
-                        single_char_buf[y * Font20.Width + x] = 0x00; // Black pixel
-                        printf("#"); 
-                    } else {
-                        printf("."); 
+                        int word_x = x / 2;
+                        int buf_idx = y * words_per_row + word_x;
+                        
+                        // Pack two 8-bit pixels into one 16-bit word based on even/odd column
+                        if (x % 2 == 0) {
+                            single_char_buf[buf_idx] &= 0xFF00; // Set low byte (pixel 1) to black (0x00)
+                        } else {
+                            single_char_buf[buf_idx] &= 0x00FF; // Set high byte (pixel 2) to black (0x00)
+                        }
                     }
                 }
-                printf("\n");
             }
-            printf("---------------------------------------\n");
 
-            // 2. Calculate target position on screen (adjusted for current rotation layout)
-            int target_x = dev_info.Panel_W - cursor_x - Font20.Width;
-            int target_y = dev_info.Panel_H - cursor_y - Font20.Height;
+            int target_x = cursor_x;
+            int target_y = cursor_y;
 
-            // 3. Write glyph pixels to the IT8951 VRAM buffer
+            // 3. Configure load info for the IT8951 packed controller format
             IT8951_Load_Img_Info draw_load;
             draw_load.Endian_Type = 0;
-            draw_load.Pixel_Format = 2; // 2 explicitly defines 8-bpp mode
+            draw_load.Pixel_Format = 2; // 8-bpp packed mode
             draw_load.Rotate = 0;
-            draw_load.Source_Buffer_Addr = single_char_buf; // Clean 8-bit pointer
+            // The function expects UBYTE*, cast our UWORD array safely
+            draw_load.Source_Buffer_Addr = (UBYTE*)single_char_buf;
             draw_load.Target_Memory_Addr = target_addr;
 
             IT8951_Area_Img_Info draw_area;
@@ -120,7 +130,7 @@ int main(int argc, char *argv[]) {
 
             EPD_IT8951_HostAreaPackedPixelWrite_8bp(&draw_load, &draw_area);
 
-            // 4. Trigger localized low-latency refresh using fast A2 mode from internal VRAM
+            // 4. Trigger localized low-latency refresh using the working AreaBuf function
             EPD_IT8951_Display_AreaBuf(
                 target_x, 
                 target_y, 
@@ -133,15 +143,15 @@ int main(int argc, char *argv[]) {
             // 5. Advance typewriter cursor horizontally
             cursor_x += Font20.Width;
 
-            // Simple line break handler when reaching the right edge (100px margin)
+            // Line break logic (100px safety margin)
             if (cursor_x + Font20.Width > dev_info.Panel_W - 100) {
                 cursor_x = 100;
-                cursor_y += (Font20.Height + 4); // 4px line spacing
+                cursor_y += (Font20.Height + 4);
             }
         }
     } 
 
-    // Clean up resources upon exit
+    // Clean up hardware state on exit
     close(kbd_fd);
     DEV_Module_Exit();
     return 0;
