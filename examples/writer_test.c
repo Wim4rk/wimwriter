@@ -72,15 +72,13 @@ int main(int argc, char *argv[]) {
 
             // 1. Extract the glyph bitmap from Font20 into a temporary local 8bpp buffer
 	    int cache_index = ascii_char - 32;
-
-            // FIX: Changed from UBYTE to UWORD (16-bit) to match IT8951 SPI word expectations
-            UWORD single_char_buf[Font20.Width * Font20.Height];
-
-            // Clear buffer to white (0x00FF inside a 16-bit word represents white in 8bpp)
-            for (int i = 0; i < Font20.Width * Font20.Height; i++) {
-                single_char_buf[i] = 0x00FF;
-            }
-
+            
+            // Reverted back to UBYTE (8-bit per pixel) as expected by the _8bp function
+            UBYTE single_char_buf[Font20.Width * Font20.Height];
+            
+            // Clear buffer to white. 0xF0 represents white in 4-bit/8-bit hybrid IT8951 VRAM
+            memset(single_char_buf, 0xF0, sizeof(single_char_buf));
+            
             int bytes_per_char = ((Font20.Width + 7) / 8) * Font20.Height;
             const UBYTE *ptr = &Font20.table[cache_index * bytes_per_char];
 
@@ -92,10 +90,10 @@ int main(int argc, char *argv[]) {
 
                 for (int x = 0; x < Font20.Width; x++) {
                     if ((row_bits << x) & 0x8000) {
-                        single_char_buf[y * Font20.Width + x] = 0x0000; // Black pixel (16-bit)
-                        printf("#");
+                        single_char_buf[y * Font20.Width + x] = 0x00; // Black pixel
+                        printf("#"); 
                     } else {
-                        printf(".");
+                        printf("."); 
                     }
                 }
                 printf("\n");
@@ -109,10 +107,9 @@ int main(int argc, char *argv[]) {
             // 3. Write glyph pixels to the IT8951 VRAM buffer
             IT8951_Load_Img_Info draw_load;
             draw_load.Endian_Type = 0;
-            draw_load.Pixel_Format = 2; // 2 explicitly defines 8-bpp grayscale mode for IT8951
+            draw_load.Pixel_Format = 2; // 2 explicitly defines 8-bpp mode
             draw_load.Rotate = 0;
-            // FIX: Cast pointer to UBYTE* because the struct definition expects UBYTE* // even though the data layout must be 16-bit aligned words!
-            draw_load.Source_Buffer_Addr = (UBYTE*)single_char_buf;
+            draw_load.Source_Buffer_Addr = single_char_buf; // Clean 8-bit pointer
             draw_load.Target_Memory_Addr = target_addr;
 
             IT8951_Area_Img_Info draw_area;
