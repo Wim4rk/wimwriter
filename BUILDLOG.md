@@ -1,5 +1,3 @@
-Här är en komplett och strukturerad sammanfattning av vårt gemensamma beslutsläge för din digitala skrivmaskin. Detta dokument fungerar som vår gemensamma karta inför nästa fas.
-
 ---
 
 # Projektsummering: Minimalistisk digital skrivmaskin
@@ -21,9 +19,9 @@ Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på 
 
 För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
 
-1. **Lägsta möjliga latens (< 80 ms):** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
+1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
-3. **Säkerhet för data:** All text ska skrivas kontinuerligt till SD-kortet för att förhindra förlust vid plötsligt spänningsfall, samt synkas säkert och självständigt mot din NAS.
+3. **Säkerhet för data:** All text ska skrivas kontinuerligt till SD-kortet för att förhindra förlust vid plötsligt spänningsfall, samt synkas säkert och självständigt mot en NAS eller till Dropbox.
 
 ---
 
@@ -33,15 +31,15 @@ För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi
 
 ### Inmatning & Logik (C-baserat "Bare-Metal"-tänk)
 
-* Vi förkastar Python (och bibliotek som Pillow) för själva renderingsloopen. Python är för långsamt för att beräkna bounding boxes och skjuta bilddata på en 1 GHz ARMv6-processor utan märkbar latens.
+* Vi använder C. Vi förkastar Python (och bibliotek som Pillow) för själva renderingsloopen. Python är för långsamt för att beräkna bounding boxes och skjuta bilddata på en 1 GHz ARMv6-processor utan märkbar latens.
 * Vi bygger en **C-baserad renderingsmotor** som körs direkt mot Waveshares officiella C-bibliotek (bcm2835-baserat) för att styra IT8951 direkt via SPI.
-* **Glyph Caching:** Vid uppstart renderar C-programmet ditt önskade typsnitt (motsvarande storlek 10–12 i Word, vilket på HD-skärmen motsvarar cirka 45–50 pixlar höga bokstäver) och sparar dem som monokroma ($32 \times 64$px) bitmapps-arrayer direkt i RAM-minnet (`font.h`).
+* **Glyph Caching:** Vid uppstart renderar C-programmet ditt önskade typsnitt (motsvarande storlek 10–12 i Word, vilket på HD-skärmen motsvarar cirka 45–50 pixlar höga bokstäver) och sparar dem som monokroma ($32 \times 64$px) bitmapps-arrayer direkt i RAM-minnet (`font.h`). Beroende på hur eink-skärmen fungerar kan det vara nödvändigt med 32px eller 64px. Möjligen med padding. Just nu finns en renderad ascii-fil: lib/Fonts/font24.c
 * När en tangent trycks ned läser `evdev` av detta. Programmet gör en blixtsnabb `memcpy` av rätt bokstavs-bitmapp och skickar endast den lilla förändrade rutan (damage box, ca 256 bytes) över SPI.
 
 ### Skärmstyrning (IT8951-optimering)
 
 * **Skrivläge (A2-mode):** Under aktivt skrivande körs skärmen i det monokroma, asynkrona **A2 (Animation)-läget**. Detta minimerar latensen till under 50 ms.
-* **Tyst städning (DU-mode):** Vid naturliga pauser, som vid tryck på `Enter` (ny rad), uppdateras den aktuella raden eller skärmen i det skarpare **DU (Direct Update)-läget** för att rensa bort eftersläpningar (ghosting).
+* **Tyst städning (DU-mode):** Vid naturliga pauser, som vid tryck på `Enter` (ny rad), ska den aktuella raden eller skärmen uppdateras i det skarpare **DU (Direct Update)-läget** för att rensa bort eftersläpningar (ghosting).
 * **Helskärms-refresh:** En fullständig nollställning (flash) görs endast vid stora händelser (t.ex. sidbyte eller manuellt knapptryck).
 
 ### Nätverk & Synk (Tailscale + NAS)
@@ -56,43 +54,59 @@ För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi
 4. Slå av WiFi helt och hållet (`rfkill block`).
 
 
-### Minnesanteckningar ###
+## Minnesanteckningar ##
 
 Vi har beslutat oss för att använda
 
 * OS: Raspberry Pi OS Bullseye (Debian 11)
-* Hårdvara: Pi Zero W med IT8951-drivkort. Just nu monterad som en shield eller hat. Bör senare kopplas till PINs på RPi för att vi ska komma åt oanvända PINs.
+* Hårdvara: Pi Zero W med IT8951-drivkort. Just nu monterad som en shield eller hat. Bör senare kopplas till PINs på RPi för att vi ska komma åt oanvända PINs. All hårdvara fungerar, just nu drivs den på batteri.
 * Mjukvara: Waveshares nya bibliotek i ~/IT8951-ePaper/Raspberry.
 * Drivrutin: Standard-SPI via det inbyggda BCM2835-biblioteket (kompilerat med enbart sudo make -j4).
 
+# Projektlogg: writerDeck – Statusuppdatering
+
+Detta dokument beskriver nuläget för *writerDeck* efter dagens utvecklingsinsats.
+
+## Nuläge: Från "låst" till "responsiv"
+Efter dagens arbete har vi tagit ett avgörande kliv framåt i projektets mjukvaruarkitektur. Vi har gått från en initieringsprocess som låste sig vid SPI-kommunikation till en stabil och fungerande uppkoppling mellan Raspberry Pi Zero och IT8951-kontrollern.
+
+### Vad vi har uppnått idag:
+1. **Kompilering och drivrutiner:** Vi har integrerat Waveshares `Makefile`-logik och säkerställt att rätt flaggor (`-D BCM`) skickas till kompilatorn. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
+2. **Hårdvaruinitiering:** Vi har framgångsrikt implementerat `EPD_IT8951_Init` och hämtat korrekt skärminformation (1448x1072, firmware-version, VCOM-värde) direkt från hårdvaran.
+3. **Rendering i gång:** Vi har löst strukturella problem i `main.c` kring variabelskop och funktionsanrop. Programmet kan nu trigga renderingsanrop vid varje tangenttryckning, och en visuell reaktion (fyrkant/bounding box) syns på e-bläcksskärmen för varje tryck.
+
+## Identifierade tekniska utmaningar
+* **Renderingens innehåll:** För närvarande ritas endast en "bounding box" (fyrkant). Vi har bekräftat att kommunikationen fungerar, men behöver nu finjustera hur själva tecken-bitmappen läses och skickas till skärmen.
+* **Datatyp och format:** Det råder en diskrepans mellan fontens lagringsformat (bitmapp) och vad IT8951-kontrollern förväntar sig i `Packed Pixel`-läget.
+
+## Nästa steg (Att göra)
+1. **Analys av bitmap-data:** Verifiera innehållet i `bitmap`-bufferten innan den skickas för rendering. Vi behöver säkerställa att teckendata (`A`, `B`, `C` osv.) faktiskt finns representerade som 1:or och 0:or i minnet.
+2. **Finjustering av `render_char_fast`:**
+    * Testa byte-ordningen och pixelformatet (växla mellan `1BPP` och `8BPP` i anropen).
+    * Kontrollera att font-tabellens offset pekar korrekt på den valda bokstaven.
+3. **Implementera partiell uppdatering:** När tecknet ritas korrekt, säkerställa att vi endast anropar uppdatering för den specifika rektangeln (istället för att flasha hela skärmen) för att hålla latensen nere.
+4. **Tangentbordsinmatning:** Koppla samman `evdev`-logiken med den nu fungerande renderingsfunktionen.
+
+---
+*Loggen upprättad 2026-07-20.*
+
+# Referens #
+
 ### Git ###
 
-Publikt git-repo finns: https://github.com/Wim4rk/wimwriter
+Publikt git-repo för detta projekt f inns: https://github.com/Wim4rk/wimwriter
 Sent i processen ska vi göra detta offentligt så att andra som vill bygga en writerdeck får fler idéer och lösningar.
 
-### Nuvarande läge ###
-* Vi har anslutit skärmen via drivkortet som en HAT.
-* Vi har kört Waveshares egna test.
-* Vi har skapat glypher för vår glyph-cache och inlett programmering för att visa dem.
-## Tangentbords-lyssnaren (Linux Input Subsystem): ##
-* Vi har kodat en robust while(read(...)) loop som lyssnar direkt på /dev/input/event0. Den fångar hårdvarukoder (Keycodes) för tangenttryckningar och filtrerar bort "key release" (ev.value == 1).
-## Tangentbords-översättaren (Scancode till ASCII): ##
-* Vi byggde en rå översättningstabell (if/else-block) som mappar Linux scancodes (t.ex. 30 för tangenten 'A') till tecken. Vi har även förberett för de svenska tecknen Å, Ä, Ö genom att mappa dem till specifika index där de förväntas ligga i fontmatrisen.
-## Font-uppackaren (1-bpp till Gråskala): ##
-* Vi har knäckt logiken för hur Waveshares inbyggda typsnitt (Font20) är packade. Fonten är lagrad som en monokrom (1-bit-per-pixel) bitmapp där varje rad tar upp 2 bytes (16 bitar). Vår C-kod läser dessa bitar med bit-skiftning (<< x & 0x8000) och översätter dem till pixlar. Terminal-debuggen bevisade att denna uppackning är 100 % perfekt.
+Andra git-repon där e-bläckskärmar används. Till exempel:
+* ZeroWriter
+* PaperTTY
+* Med flera
 
-## Hårdvarumanipulationen (Waveshare-hacket):##
-* Vi gick in i lib/e-Paper/EPD_IT8951.c och tog bort static-nyckelordet från centrala funktioner för att din egen kod ska kunna prata direkt med IT8951-kontrollerns register och minnesbanker utan omvägar. Vi ändrade även initieringsparametrarna för att rotera skärmen.
-
-### Analys ###
-När vi testade att skriva ut bokstaven a i terminalen ritades den upp perfekt. När den skickas till e-bläck-skärmen blir det en "storm av pixlar" (pixelkaos).IT8951-kontrollern är extremt kräsen med hur pixlar är organiserade i det fysiska minnet (VRAM) jämfört med hur de skickas över SPI-bussen. När skärmen dessutom är hårdvaruroterad, ändras minneslayouten i chippet radikalt. En "rad" i chippets ögon är inte längre samma sak som en rad i vår array.När vi skickar en liten isolerad ruta på $14 \times 20$ pixlar med funktionen EPD_IT8951_HostAreaPackedPixelWrite_8bp, försöker chippets DMA-motor att placera dessa pixlar i en roterad matris. Det resulterar i att bitar och bytes hamnar helt förskjutna, vilket skapar bruset.
-
-### Möjliga strategier ###
-För att få slut på pixelkaoset en gång för alla och faktiskt se bokstäver på skärmen, har vi två strategiska vägar att gå när vi plockar upp tråden igen:
-* Strategi A (Framebuffert-metoden): Vi slutar ladda upp små mikro-buffertar per bokstav. Vi ritar istället i en stor framebuffert i Pi:ns RAM som matchar hela skärmens storlek ($1448 \times 1072$). Sedan hittar vi den exakta Waveshare-funktionen som skickar hela skärmen på rätt sätt, vilket gör att vi slipper IT8951:s delvisa rotations-kaos.
-* Strategi B (1-bpp läget): Eftersom fonten redan är i 1-bpp (svartvitt), kan vi ställa om skärmen till det supersnabba 1-bpp-läget (Pixel_Format = 0). Det kräver att vi packar om våra pixlar till bitar, men det sparar enormt mycket SPI-bandbredd och brukar vara betydligt mindre känsligt för stride-fel i kontrollern.
+### Tangentbords-översättaren (Scancode till ASCII): ###
+* Vi ska bygga en rå översättningstabell (if/else-block) som mappar Linux scancodes (t.ex. 30 för tangenten 'A') till tecken. Vi har förberett för de svenska tecknen Å, Ä, Ö genom att mappa dem till specifika index där de förväntas ligga i fontmatrisen.
 
 ### Specar för e-bläckskärmen ###
+https://www.waveshare.com/wiki/6inch_HD_e-Paper_HAT?srsltid=AfmBOorzHeeWp2Pp1WDUMXZvQR7rJ5uvXGIq74KlfZNBFP9B932APp6L
 6inch e-Paper HAT uses IT8951 as a controller, it can be controlled by USB/SPI/I80/I2C interface with the resolution of 1448 × 1072, 6inch EPD (Electronic Paper Display) display.
 
 * Operating voltage: 5V

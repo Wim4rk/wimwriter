@@ -25,6 +25,7 @@ int main(int argc, char *argv[]) {
     printf("Initializing display with VCOM: -%.2f V (%d mV)...\n", -vcom, vcom_mv);
     
     // Get device info and apply VCOM settings
+    // This is where the program stops:
     IT8951_Dev_Info dev_info = EPD_IT8951_Init(vcom_mv);
     
     // Calculate the full 32-bit target memory address in IT8951 VRAM

@@ -41,7 +41,7 @@ UBYTE A2_Mode = 6;
 function :	Software reset
 parameter:
 ******************************************************************************/
-static void EPD_IT8951_Reset(void)
+void EPD_IT8951_Reset(void)
 {
     DEV_Digital_Write(EPD_RST_PIN, HIGH);
     DEV_Delay_ms(200);
@@ -56,7 +56,7 @@ static void EPD_IT8951_Reset(void)
 function :	Wait until the busy_pin goes HIGH
 parameter:
 ******************************************************************************/
-static void EPD_IT8951_ReadBusy(void)
+void EPD_IT8951_ReadBusy(void)
 {
 	// Debug("Busy ------\r\n");
     UBYTE Busy_State = DEV_Digital_Read(EPD_BUSY_PIN);
@@ -72,7 +72,7 @@ static void EPD_IT8951_ReadBusy(void)
 function :	write command
 parameter:  command
 ******************************************************************************/
-static void EPD_IT8951_WriteCommand(UWORD Command)
+void EPD_IT8951_WriteCommand(UWORD Command)
 {
 	//Set Preamble for Write Command
 	UWORD Write_Preamble = 0x6000;
@@ -97,7 +97,7 @@ static void EPD_IT8951_WriteCommand(UWORD Command)
 function :	write data
 parameter:  data
 ******************************************************************************/
-static void EPD_IT8951_WriteData(UWORD Data)
+void EPD_IT8951_WriteData(UWORD Data)
 {
     //Set Preamble for Write Command
 	UWORD Write_Preamble = 0x0000;
@@ -122,7 +122,7 @@ static void EPD_IT8951_WriteData(UWORD Data)
 function :	write multi data
 parameter:  data
 ******************************************************************************/
-static void EPD_IT8951_WriteMuitiData(UWORD* Data_Buf, UDOUBLE Length)
+void EPD_IT8951_WriteMuitiData(UWORD* Data_Buf, UDOUBLE Length)
 {
     //Set Preamble for Write Command
 	UWORD Write_Preamble = 0x0000;
@@ -150,7 +150,7 @@ static void EPD_IT8951_WriteMuitiData(UWORD* Data_Buf, UDOUBLE Length)
 function :	read data
 parameter:  data
 ******************************************************************************/
-static UWORD EPD_IT8951_ReadData()
+UWORD EPD_IT8951_ReadData()
 {
     UWORD ReadData;
 	UWORD Write_Preamble = 0x1000;
@@ -186,7 +186,7 @@ static UWORD EPD_IT8951_ReadData()
 function :	read multi data
 parameter:  data
 ******************************************************************************/
-static void EPD_IT8951_ReadMultiData(UWORD* Data_Buf, UDOUBLE Length)
+void EPD_IT8951_ReadMultiData(UWORD* Data_Buf, UDOUBLE Length)
 {
 	UWORD Write_Preamble = 0x1000;
     UWORD Read_Dummy;
@@ -225,7 +225,7 @@ description:	some situation like this:
 * 1 commander     1    argument
 * 1 commander   multi  argument
 ******************************************************************************/
-static void EPD_IT8951_WriteMultiArg(UWORD Arg_Cmd, UWORD* Arg_Buf, UWORD Arg_Num)
+void EPD_IT8951_WriteMultiArg(UWORD Arg_Cmd, UWORD* Arg_Buf, UWORD Arg_Num)
 {
      //Send Cmd code
      EPD_IT8951_WriteCommand(Arg_Cmd);
@@ -241,7 +241,7 @@ static void EPD_IT8951_WriteMultiArg(UWORD Arg_Cmd, UWORD* Arg_Buf, UWORD Arg_Nu
 function :	Cmd4 ReadReg
 parameter:  
 ******************************************************************************/
-static UWORD EPD_IT8951_ReadReg(UWORD Reg_Address)
+UWORD EPD_IT8951_ReadReg(UWORD Reg_Address)
 {
     UWORD Reg_Value;
     EPD_IT8951_WriteCommand(IT8951_TCON_REG_RD);
@@ -256,7 +256,7 @@ static UWORD EPD_IT8951_ReadReg(UWORD Reg_Address)
 function :	Cmd5 WriteReg
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_WriteReg(UWORD Reg_Address,UWORD Reg_Value)
+void EPD_IT8951_WriteReg(UWORD Reg_Address,UWORD Reg_Value)
 {
     EPD_IT8951_WriteCommand(IT8951_TCON_REG_WR);
     EPD_IT8951_WriteData(Reg_Address);
@@ -269,7 +269,7 @@ static void EPD_IT8951_WriteReg(UWORD Reg_Address,UWORD Reg_Value)
 function :	get VCOM
 parameter:  
 ******************************************************************************/
-static UWORD EPD_IT8951_GetVCOM(void)
+UWORD EPD_IT8951_GetVCOM(void)
 {
     UWORD VCOM;
     EPD_IT8951_WriteCommand(USDEF_I80_CMD_VCOM);
@@ -284,7 +284,7 @@ static UWORD EPD_IT8951_GetVCOM(void)
 function :	set VCOM
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_SetVCOM(UWORD VCOM)
+void EPD_IT8951_SetVCOM(UWORD VCOM)
 {
     EPD_IT8951_WriteCommand(USDEF_I80_CMD_VCOM);
     EPD_IT8951_WriteData(0x0001);
@@ -297,7 +297,7 @@ static void EPD_IT8951_SetVCOM(UWORD VCOM)
 function :	Cmd10 LD_IMG
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_LoadImgStart( IT8951_Load_Img_Info* Load_Img_Info )
+void EPD_IT8951_LoadImgStart( IT8951_Load_Img_Info* Load_Img_Info )
 {
     UWORD Args;
     Args = (\
@@ -314,7 +314,7 @@ static void EPD_IT8951_LoadImgStart( IT8951_Load_Img_Info* Load_Img_Info )
 function :	Cmd11 LD_IMG_Area
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_LoadImgAreaStart( IT8951_Load_Img_Info* Load_Img_Info, IT8951_Area_Img_Info* Area_Img_Info )
+void EPD_IT8951_LoadImgAreaStart( IT8951_Load_Img_Info* Load_Img_Info, IT8951_Area_Img_Info* Area_Img_Info )
 {
     UWORD Args[5];
     Args[0] = (\
@@ -333,7 +333,7 @@ static void EPD_IT8951_LoadImgAreaStart( IT8951_Load_Img_Info* Load_Img_Info, IT
 function :	Cmd12 LD_IMG_End
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_LoadImgEnd(void)
+void EPD_IT8951_LoadImgEnd(void)
 {
     EPD_IT8951_WriteCommand(IT8951_TCON_LD_IMG_END);
 }
@@ -343,7 +343,7 @@ static void EPD_IT8951_LoadImgEnd(void)
 function :	EPD_IT8951_Get_System_Info
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_GetSystemInfo(void* Buf)
+void EPD_IT8951_GetSystemInfo(void* Buf)
 {
     IT8951_Dev_Info* Dev_Info; 
 
@@ -363,7 +363,7 @@ static void EPD_IT8951_GetSystemInfo(void* Buf)
 function :	EPD_IT8951_Set_Target_Memory_Addr
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_SetTargetMemoryAddr(UDOUBLE Target_Memory_Addr)
+void EPD_IT8951_SetTargetMemoryAddr(UDOUBLE Target_Memory_Addr)
 {
 	UWORD WordH = (UWORD)((Target_Memory_Addr >> 16) & 0x0000FFFF);
 	UWORD WordL = (UWORD)( Target_Memory_Addr & 0x0000FFFF);
@@ -377,7 +377,7 @@ static void EPD_IT8951_SetTargetMemoryAddr(UDOUBLE Target_Memory_Addr)
 function :	EPD_IT8951_WaitForDisplayReady
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_WaitForDisplayReady(void)
+void EPD_IT8951_WaitForDisplayReady(void)
 {
     //Check IT8951 Register LUTAFSR => NonZero Busy, Zero - Free
     while( EPD_IT8951_ReadReg(LUTAFSR) )
@@ -436,7 +436,7 @@ void EPD_IT8951_HostAreaPackedPixelWrite_1bp(IT8951_Load_Img_Info*Load_Img_Info,
 function :	EPD_IT8951_HostAreaPackedPixelWrite_2bp
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_HostAreaPackedPixelWrite_2bp(IT8951_Load_Img_Info*Load_Img_Info, IT8951_Area_Img_Info*Area_Img_Info, bool Packed_Write)
+void EPD_IT8951_HostAreaPackedPixelWrite_2bp(IT8951_Load_Img_Info*Load_Img_Info, IT8951_Area_Img_Info*Area_Img_Info, bool Packed_Write)
 {
     UWORD Source_Buffer_Width, Source_Buffer_Height;
     UWORD Source_Buffer_Length;
@@ -477,7 +477,7 @@ static void EPD_IT8951_HostAreaPackedPixelWrite_2bp(IT8951_Load_Img_Info*Load_Im
 function :	EPD_IT8951_HostAreaPackedPixelWrite_4bp
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_HostAreaPackedPixelWrite_4bp(IT8951_Load_Img_Info*Load_Img_Info, IT8951_Area_Img_Info*Area_Img_Info, bool Packed_Write)
+void EPD_IT8951_HostAreaPackedPixelWrite_4bp(IT8951_Load_Img_Info*Load_Img_Info, IT8951_Area_Img_Info*Area_Img_Info, bool Packed_Write)
 {
     UWORD Source_Buffer_Width, Source_Buffer_Height;
     UWORD Source_Buffer_Length;
@@ -553,7 +553,7 @@ void EPD_IT8951_HostAreaPackedPixelWrite_8bp(IT8951_Load_Img_Info*Load_Img_Info,
 function :	EPD_IT8951_Display_Area
 parameter:  
 ******************************************************************************/
-static void EPD_IT8951_Display_Area(UWORD X,UWORD Y,UWORD W,UWORD H,UWORD Mode)
+void EPD_IT8951_Display_Area(UWORD X,UWORD Y,UWORD W,UWORD H,UWORD Mode)
 {
     UWORD Args[5];
     Args[0] = X;
@@ -667,6 +667,7 @@ parameter:
 ******************************************************************************/
 IT8951_Dev_Info EPD_IT8951_Init(UWORD VCOM)
 {
+    printf("ow_test: rad 670 i EPD_IT8951_Init");
     IT8951_Dev_Info Dev_Info;
 
     EPD_IT8951_Reset();
