@@ -1,32 +1,30 @@
-# Kompilator och prestandaflaggor för ARMv6 (Pi Zero W)
+# Kompilator och prestandaflaggor för ARMv6 (Raspberry Pi Zero W)
 CC = gcc
 CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
-# Katalogdeklarationer
+# Katalogsökvägar för projektet
 DIR_Config   = ./lib/Config
 DIR_EPD      = ./lib/e-Paper
 DIR_FONTS    = ./lib/Fonts
 DIR_GUI      = ./lib/GUI
-DIR_Examples = ./examples
-DIR_BIN      = ./bin
 
-# Inkluderingskataloger
-INCLUDES = -I$(DIR_Config) -I$(DIR_EPD) -I$(DIR_FONTS) -I$(DIR_GUI)
+# Inkluderingssökvägar (-I. tillåter relativ sökväg från roten)
+INCLUDES = -I. -I$(DIR_Config) -I$(DIR_EPD) -I$(DIR_FONTS) -I$(DIR_GUI)
 
-# Bibliotek som krävs för SPI, trådar och matematik
+# Länkningsbibliotek (BCM2835 för SPI, pthread för trådar, m för matematik)
 LIBS = -lbcm2835 -lpthread -lm
 
-# Källfiler
+# Källfiler som ingår i kompileringen
 SRCS = main.c \
        $(DIR_Config)/DEV_Config.c \
        $(DIR_GUI)/GUI_Paint.c \
        $(DIR_EPD)/EPD_IT8951.c \
        $(DIR_FONTS)/font24.c
 
-# Objektfiler
+# Genererade objektfiler
 OBJS = $(SRCS:.c=.o)
 
-# Mål för att bygga binärfilen
+# Mål för binärfilen
 TARGET = wimwriter
 
 $(TARGET): $(OBJS)

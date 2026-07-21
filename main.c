@@ -16,61 +16,99 @@ static IT8951_Dev_Info dev_info;
 static UBYTE char_buffer[100]; //Stor nog för 20x20 pixlar
 */
 
-void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
-    // Beräkna offset för glyphen (ASCII ' ' är start)
-    int bytes_per_char = Font24.Height * (Font24.Width / 8);
+// void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
+//     // Beräkna offset för glyphen (ASCII ' ' är start)
+//     int bytes_per_char = Font24.Height * (Font24.Width / 8);
+//     int offset = (c - ' ') * bytes_per_char;
+
+//     // 2. Sätt källadressen till rätt position i font-tabellen
+//     load_info->Source_Buffer_Addr = (UBYTE *)&Font24.table[offset];
+
+//     // 3. Konfigurera pixelformat och endianness
+//     load_info->Pixel_Format = IT8951_3BPP; // Använd 1 bit för font-data
+//     load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+//     load_info->Rotate = IT8951_ROTATE_0;
+// }
+//
+void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info, sFONT *font) {
+    // Beräkna offset baserat på tecknets position i ASCII-tabellen.
+    // Waveshares font-tabeller börjar normalt vid mellanslag (ASCII 32).
+    int bytes_per_line = (font->Width + 7) / 8;
+    int bytes_per_char = font->Height * bytes_per_line;
     int offset = (c - ' ') * bytes_per_char;
 
-    // 2. Sätt källadressen till rätt position i font-tabellen
-    load_info->Source_Buffer_Addr = (UBYTE *)&Font24.table[offset];
+    // Peka direkt på tecknets monokroma data för lägsta möjliga latens
+    load_info->Source_Buffer_Addr = (UBYTE *)&font->table[offset];
 
-    // 3. Konfigurera pixelformat och endianness
-    load_info->Pixel_Format = IT8951_3BPP; // Använd 1 bit för font-data
-    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+    // Konfigurera packning och endianness
+    load_info->Pixel_Format = IT8951_2BPP; // I Waveshares HostArea-API används ofta detta för 1bp-överföringar
+    load_info->Endian_Type = IT8951_LDIMG_L_ENDIAN; // Justera till B_ENDIAN om bitarna hamnar spegelvänt
     load_info->Rotate = IT8951_ROTATE_0;
 }
 
-void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+void render_char(char c, int x, int y, UDOUBLE target_addr, sFONT *font) {
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
 
-    // Använd Font24 direkt för att beräkna storleken
-    int bytes_per_line = (Font24.Width + 7) / 8; //  (14+7)/8 = 2
-    int bytes_per_char = Font24.Height * bytes_per_line;
+    // Förbered bildinformationen
+    prepare_char_bitmap(c, &load_info, font);
+    load_info.Target_Memory_Addr = target_addr;
 
-    // Debug: tvinga offset för 'A'
-    // int offset = (65 - 32) * 40; // 1320
-    // printf("DEBUG: Använder offset %d för '%c'\n", offset, c);
+    // Definiera den uppdaterade rektangeln (bounding box)
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = font->Width;
+    area_info.Area_H = font->Height;
 
-    // int offset = (c - ' ') * bytes_per_char;
-    //const UBYTE *bitmap = &Font24.table[offset];
-    const UBYTE *bitmap = &Font24.table[40];
-    printf("DEBUG: Byte på offset 40: 0x%02X\n", bitmap[0]);
+    // Skicka tecknets datablock till controllern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(&load_info, &area_info, true);
 
-    printf("Renderar '%c' vid %d, %d\n", c, x, y);
-
-    // Uppdatera positionen i area_info
-    area_info->Area_X = x;
-    area_info->Area_Y = y;
-    area_info->Area_W = Font24.Width;
-    area_info->Area_H = Font24.Height;
-
-    load_info->Source_Buffer_Addr = (UBYTE*)bitmap;
-    load_info->Target_Memory_Addr = target_addr;
-    load_info->Pixel_Format = IT8951_3BPP; // Stor risk att 8BPP ska användas
-
-    load_info->Pixel_Format = IT8951_3BPP;
-    load_info->Rotate = IT8951_ROTATE_0;
-    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
-
-    // Debug
-    printf("DEBUG: Första 4 byten för '%c': 0x%02X 0x%02X 0x%02X 0x%02X\n",
-       c, bitmap[0], bitmap[1], bitmap[2], bitmap[3]);
-
-    // Skriv till kontrollern
-    EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, true);
-
-    // Uppdatera skärmen, mode 0 verkar satbilast
-    EPD_IT8951_Display_AreaBuf(x, y, Font24.Width, Font24.Height, 2, target_addr);
+    // Uppdatera endast den lilla ytan på e-bläcksskärmen
+    // Vi använder A2_Mode för snabbast möjliga uppdatering i skrivläget
+    EPD_IT8951_Display_AreaBuf(x, y, font->Width, font->Height, A2_Mode, target_addr);
 }
+
+// void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+
+//     // Använd Font24 direkt för att beräkna storleken
+//     int bytes_per_line = (Font24.Width + 7) / 8; //  (14+7)/8 = 2
+//     int bytes_per_char = Font24.Height * bytes_per_line;
+
+//     // Debug: tvinga offset för 'A'
+//     // int offset = (65 - 32) * 40; // 1320
+//     // printf("DEBUG: Använder offset %d för '%c'\n", offset, c);
+
+//     // int offset = (c - ' ') * bytes_per_char;
+//     //const UBYTE *bitmap = &Font24.table[offset];
+//     const UBYTE *bitmap = &Font24.table[40];
+//     printf("DEBUG: Byte på offset 40: 0x%02X\n", bitmap[0]);
+
+//     printf("Renderar '%c' vid %d, %d\n", c, x, y);
+
+//     // Uppdatera positionen i area_info
+//     area_info->Area_X = x;
+//     area_info->Area_Y = y;
+//     area_info->Area_W = Font24.Width;
+//     area_info->Area_H = Font24.Height;
+
+//     load_info->Source_Buffer_Addr = (UBYTE*)bitmap;
+//     load_info->Target_Memory_Addr = target_addr;
+//     load_info->Pixel_Format = IT8951_3BPP; // Stor risk att 8BPP ska användas
+
+//     load_info->Pixel_Format = IT8951_3BPP;
+//     load_info->Rotate = IT8951_ROTATE_0;
+//     load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+
+//     // Debug
+//     printf("DEBUG: Första 4 byten för '%c': 0x%02X 0x%02X 0x%02X 0x%02X\n",
+//        c, bitmap[0], bitmap[1], bitmap[2], bitmap[3]);
+
+//     // Skriv till kontrollern
+//     EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, true);
+
+//     // Uppdatera skärmen, mode 0 verkar satbilast
+//     EPD_IT8951_Display_AreaBuf(x, y, Font24.Width, Font24.Height, 2, target_addr);
+// }
 
 int main() {
     int cursor_x = 100;
@@ -91,32 +129,18 @@ int main() {
 
     // Init-anrop
     Dev_Info = EPD_IT8951_Init(2140);
-    printf("Vi klarade init-anropet!");
-
-    // Häpmta adressen från den initierade strukturen
-    // Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
-
-    // EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, 0);
-
-    printf("Skärmstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+    printf("Init-anrop")
 
     UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
 
     // Testa
-    printf("Debug: Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
-    printf("Debug: Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
-
-    // Testa en hård rendering
-    // printf("Testar rendering av 'A'...\n");
-    // render_char_fast('A', 100, 100, target_addr, &load_img_info, &area_img_info);
-
-    // Rensar skärmen till vitt (0 = vit, 1 = svart, beroende på modell)
-    // EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 1);
+    printf("Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
+    printf("Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
 
     if (Dev_Info.Panel_W == 0) {
         printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
     } else {
-        printf("Kontakt upprättad. Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+        printf("Kontakt upprättad\nPanel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
 }
 
     // Initial Clear
@@ -132,16 +156,14 @@ int main() {
     while (read(fd, &ev, sizeof(ev)) > 0) {
         if (ev.type == EV_KEY && ev.value == 1) {
 
-            // Vänta tills skärmen är ledig?
-            // EPD_IT8951_WaitForDisplayReady();
-
-            // Förbered datan för just detta tecken
+            // Förbered ett hårdkodat tecken
             prepare_char_bitmap('A', &load_img_info);
 
+            // Debug:
             printf("Tangent tryckt: kod %d\n", ev.code);
 
-            //Skriv ut glyfen
-            render_char_fast('A', cursor_x, cursor_y, target_addr, &load_img_info, &area_img_info);
+            //Skriv ut tecknet
+            render_char_('A', cursor_x, cursor_y, target_addr, &load_img_info, &area_img_info);
 
             cursor_x += Font24.Width;
 
