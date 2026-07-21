@@ -21,7 +21,15 @@ För att uppdatera e-bläcksskärmen blixtsnabbt skickar vi inte hela skärmen (
 Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att använda de delar du redan äger och att maximera drifttiden:
 
 * **Processor:** Raspberry Pi Zero W (v1). Vald framför Zero 2 W eftersom den har fastlödda headers färdiga att använda, samt en extremt låg strömförbrukning (ARMv6-arkitektur).
-* **Skärm:** 6-tums e-bläcksskärm (HD, upplösning $1448 \times 1072$) ansluten via ribbon-kablar till en dedikerad **IT8951 Driver HAT**, som i sin tur pratar med din Pi via **SPI**. Dess VCOM är -2.14 vilket oftast noteras 2140.
+* **Skärm:** 6-tums e-bläcksskärm HD ansluten via ribbon-kablar till en dedikerad **IT8951 Driver HAT**, som i sin tur pratar med din Pi via **SPI**. 
+- VCOM = -2.14 vilket oftast noteras 2140
+- Panel(W,H) = (1448,1072)
+- Memory Address = 122480
+- FW Version = SWv_0.6.
+- LUT Version = M841_TFAB512
+- VCOM = -2.14V
+- A2 Mode:6
+
 * **Strömförsörjning:** Adafruit PowerBoost 1000C (för stabil 5.2V-matning och laddning under drift) parad med ett massivt **8000 mAh LiPo-batteri** (vilket ger uppskattningsvis 40–60+ timmars skrivtid).
 * **Inmatning:** Ett färdigt 65% mekaniskt tangentbord som ansluts via USB (Micro-USB OTG till din Pi Zero) och skickar standard key-koder.
 * **Övriga Kontroller:** 

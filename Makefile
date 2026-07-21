@@ -8,10 +8,10 @@ DIR_EPD      = ./lib/e-Paper
 DIR_FONTS    = ./lib/Fonts
 DIR_GUI      = ./lib/GUI
 
-# Inkluderingssökvägar (-I. tillåter relativ sökväg från roten)
+# Inkluderingssökvägar
 INCLUDES = -I. -I$(DIR_Config) -I$(DIR_EPD) -I$(DIR_FONTS) -I$(DIR_GUI)
 
-# Länkningsbibliotek (BCM2835 för SPI, pthread för trådar, m för matematik)
+# Länkningsbibliotek (BCM2835 för SPI, pthread och m för matematik)
 LIBS = -lbcm2835 -lpthread -lm
 
 # Källfiler som ingår i kompileringen
