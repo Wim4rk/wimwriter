@@ -1,35 +1,37 @@
 # Kompilator och flaggor
 CC = gcc
-CFLAGS = -Wall -O2 -D BCM
-LDFLAGS = -lbcm2835
+CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
-# Inkluderingssökvägar
-INCLUDES = -Ilib/e-Paper -Ilib/Config
+# Sökvägar till Waveshares moduler och headers
+DIR_Config = ./Config
+DIR_Fonts = ./Fonts
+DIR_Graphics = ./GUI
+DIR_IT8951 = ./IT8951
 
-# Källkodsfiler
+# Inkluderingskataloger
+INCLUDES = -I$(DIR_Config) -I$(DIR_Fonts) -I$(DIR_Graphics) -I$(DIR_IT8951)
+
+# Bibliotek som krävs (bcm2835 för SPI, samt pthread och m för matematik)
+LIBS = -lbcm2835 -lpthread -lm
+
+# Källfiler
 SRCS = main.c \
-       lib/e-Paper/EPD_IT8951.c \
-       lib/Config/DEV_Config.c \
-       lib/Fonts/font20.c
+       $(DIR_Config)/DEV_Config.c \
+       $(DIR_Graphics)/GUI_Paint.c \
+       $(DIR_IT8951)/IT8951.c \
+       $(DIR_Fonts)/font24.c
 
-# Objektfiler (ersätter .c med .o)
+# Objektfiler
 OBJS = $(SRCS:.c=.o)
 
-# Målnamn
+# Mål för att bygga binärfilen
 TARGET = wimwriter
 
-# Standardmål
-all: $(TARGET)
-
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)
 
-# Regel för att kompilera .c till .o
 %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Rensning
 clean:
 	rm -f $(OBJS) $(TARGET)
-
-.PHONY: all clean
