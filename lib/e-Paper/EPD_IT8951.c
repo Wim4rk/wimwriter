@@ -667,7 +667,6 @@ parameter:
 ******************************************************************************/
 IT8951_Dev_Info EPD_IT8951_Init(UWORD VCOM)
 {
-    printf("ow_test: rad 670 i EPD_IT8951_Init");
     IT8951_Dev_Info Dev_Info;
 
     EPD_IT8951_Reset();
