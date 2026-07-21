@@ -1,111 +1,72 @@
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <linux/input.h>
-#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
+#include <unistd.h>
+#include "DEV_Config.h"
+#include "GUI_Paint.h"
+#include "IT8951.h"
+#include "fonts.h"
 
-#include "lib/Config/DEV_Config.h"
-#include "lib/e-Paper/EPD_IT8951.h"
-#include "lib/Fonts/fonts.h"
+// Skärmens fysiska dimensioner för HD-hatten
+#define LCD_WIDTH   1448
+#define LCD_HEIGHT  1072
 
-char map_evdev_to_ascii(int code) {
-    switch(code) {
-        case 30: return 'A';
-        case 48: return 'B';
-        case 46: return 'C';
-        case 57: return ' ';
-        default: return 'X';
-    }
-}
-
-// Hämtar och packar glyph från Font24
-void prepare_font24_glyph(char c, UBYTE *dest_buffer, int *width, int *height) {
-    int index = c - ' ';
-    if (index < 0 || index > 94) {
-        index = 0;
-    }
-
-    *width = Font24.Width;
-    *height = Font24.Height;
-
-    int bytes_per_row = (Font24.Width + 7) / 8;
-    int char_offset = index * Font24.Height * bytes_per_row;
-    const UBYTE *src = &Font24.Table[char_offset];
-
-    for (int y = 0; y < Font24.Height; y++) {
-        for (int x = 0; x < bytes_per_row; x++) {
-            dest_buffer[y * bytes_per_row + x] = src[y * bytes_per_row + x];
-        }
-    }
-}
-
-void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
-    int w, h;
-    static UBYTE glyph_cache[150]; // Font24 är större, kräver lite mer utrymme
-
-    prepare_font24_glyph(c, glyph_cache, &w, &h);
-
-    load_info->Source_Buffer_Addr = glyph_cache;
-    load_info->Target_Memory_Addr = target_addr;
-    load_info->Pixel_Format = IT8951_3BPP;
-    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
-    load_info->Rotate = IT8951_ROTATE_0;
-
-    area_info->Area_X = x;
-    area_info->Area_Y = y;
-    area_info->Area_W = w;
-    area_info->Area_H = h;
-
-    EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, false);
-    EPD_IT8951_Display_AreaBuf(x, y, w, h, 2, target_addr);
-}
-
-int main() {
-    int cursor_x = 100;
-    int cursor_y = 100;
-
-    IT8951_Dev_Info dev_info;
-    IT8951_Load_Img_Info load_img_info;
-    IT8951_Area_Img_Info area_img_info;
-
+int main(void)
+{
+    // 1. Initiera hårdvara och SPI via BCM2835
     if (DEV_Module_Init() != 0) {
+        printf("Fel: Kunde inte initiera modul.\n");
         return -1;
     }
 
-    dev_info = EPD_IT8951_Init(2140);
-    UDOUBLE base_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
+    // Hämta VCOM (exempelvis -2.14V skrivs som 2140)
+    UWORD VCOM = 2140;
 
-    if (dev_info.Panel_W == 0) {
-        printf("Ingen kontakt med skärmen.\n");
+    // Initiera IT8951-kontrollern
+    IT8951_Init(VCOM);
+
+    // 2. Skapa en virtuell framebuffer i RAM (1-bpp, 1 bit per pixel)
+    // Storlek i bytes: (1448 * 1072) / 8 = 194368 bytes
+    UDOUBLE Imagesize = ((LCD_WIDTH % 8 == 0) ? (LCD_WIDTH / 8) : (LCD_WIDTH / 8 + 1)) * LCD_HEIGHT;
+    UBYTE *BlackImage = (UBYTE *)malloc(Imagesize);
+    if (BlackImage == NULL) {
+        printf("Fel: Kunde inte allokera minne för framebuffern.\n");
         DEV_Module_Exit();
         return -1;
     }
 
-    EPD_IT8951_Clear_Refresh(dev_info, base_addr, 0);
+    // Rensa bufferten (vit bakgrund = 0xFF i 1-bpp för e-paper beroende på inversion,
+    // men Paint_NewImage nollställer eller sätter färg via Paint_Clear)
+    Paint_NewImage(BlackImage, LCD_WIDTH, LCD_HEIGHT, 0, WHITE);
+    Paint_Clear(WHITE);
 
-    int fd = open("/dev/input/event0", O_RDONLY);
-    if (fd == -1) {
-        DEV_Module_Exit();
-        return 1;
-    }
+    // 3. Gör en initial fullständig rensning av skärmen
+    IT8951_Clear_Screen(INIT_Mode);
 
-    struct input_event ev;
-    while (read(fd, &ev, sizeof(ev)) > 0) {
-        if (ev.type == EV_KEY && ev.value == 1) {
-            char current_char = map_evdev_to_ascii(ev.code);
+    // Exempelposition för skrivningen
+    UDOUBLE cursor_x = 50;
+    UDOUBLE cursor_y = 50;
 
-            render_char_fast(current_char, cursor_x, cursor_y, base_addr, &load_img_info, &area_img_info);
+    // Exempel: Skriv ut ett tecken med Font20 och uppdatera via Bounding Box (A2-läge)
+    char sample_char = 'A';
 
-            cursor_x += Font24.Width;
-            if (cursor_x > (dev_info.Panel_W - Font24.Width)) {
-                cursor_x = 100;
-                cursor_y += Font24.Height;
-            }
-        }
-    }
+    // Rita tecknet i vår RAM-buffer med Waveshares ritfunktion
+    Paint_DrawChar(cursor_x, cursor_y, sample_char, &Font20, WHITE, BLACK);
 
-    close(fd);
+    // 4. Skicka endast den förändrade ytan (Bounding Box) till IT8951
+    // Font20 har en viss bredd och höjd (t.ex. Width och Height)
+    UWORD box_x = cursor_x;
+    UWORD box_y = cursor_y;
+    UWORD box_w = Font20.Width;
+    UWORD box_h = Font20.Height;
+
+    // Ladda upp den specifika regionen från minnet till IT8951 Target Memory Address
+    // (Detta är en förenklad struktur beroende på hur RAM-adresserna i IT8951 hanteras)
+    IT8951_Display_Area(box_x, box_y, box_w, box_h, A2_Mode);
+
+    // Städa upp vid avslut
+    free(BlackImage);
     DEV_Module_Exit();
     return 0;
 }
