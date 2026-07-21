@@ -1,37 +1,64 @@
-# Kompilator och prestandaflaggor för ARMv6 (Pi Zero W)
+DIR_Config   = ./lib/Config
+DIR_EPD      = ./lib/e-Paper
+DIR_FONTS    = ./lib/Fonts
+DIR_GUI      = ./lib/GUI
+DIR_Examples = ./examples
+
+DIR_BIN      = ./bin
+
+OBJ_C = $(wildcard ${DIR_Config}/*.c ${DIR_EPD}/*.c ${DIR_FONTS}/*.c ${DIR_GUI}/*.c ${DIR_Examples}/*.c)
+OBJ_O = $(patsubst %.c,${DIR_BIN}/%.o,$(notdir ${OBJ_C}))
+
+TARGET = epd
+
 CC = gcc
-CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
-# Sökvägar till Waveshares moduler och headers
-DIR_Config = ./Config
-DIR_Fonts = ./Fonts
-DIR_Graphics = ./GUI
-DIR_IT8951 = ./IT8951
+MSG = -g -O0 -Wall
+DEBUG = -D USE_DEBUG
+STD = -std=gnu99
 
-# Inkluderingskataloger
-INCLUDES = -I$(DIR_Config) -I$(DIR_Fonts) -I$(DIR_Graphics) -I$(DIR_IT8951)
+CFLAGS += $(MSG) $(DEBUG) $(STD)
 
-# Bibliotek som krävs för SPI, trådar och matematik
-LIBS = -lbcm2835 -lpthread -lm
+LIB_USE = -lm -lrt -lpthread
 
-# Källfiler inklusive font24.c
-SRCS = main.c \
-       $(DIR_Config)/DEV_Config.c \
-       $(DIR_Graphics)/GUI_Paint.c \
-       $(DIR_IT8951)/IT8951.c \
-       $(DIR_Fonts)/font24.c
+LIB = BCM
+# LIB = LGPIO
+# LIB = GPIOD
+ifeq ($(LIB), BCM)
+    LIB_USE += -lbcm2835
+	OBJ_O := $(filter-out ${DIR_BIN}/RPI_gpiod.o ${DIR_BIN}/dev_hardware_SPI.o, ${OBJ_O})
+else ifeq ($(LIB), LGPIO)
+    LIB_USE += -llgpio -lm
+	OBJ_O := $(filter-out ${DIR_BIN}/RPI_gpiod.o ${DIR_BIN}/dev_hardware_SPI.o, ${OBJ_O})
+else ifeq ($(LIB), GPIOD)
+    LIB_USE += -lgpiod -lm
+endif
 
-# Objektfiler
-OBJS = $(SRCS:.c=.o)
+$(shell mkdir -p $(DIR_BIN))
 
-# Mål för att bygga binärfilen
-TARGET = wimwriter
+${TARGET}: ${OBJ_O}
+	$(CC) $(CFLAGS) $^ -o $@ $(LIB_USE)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)
+${DIR_BIN}/%.o: ${DIR_Config}/%.c
+	$(CC) $(CFLAGS) -D $(LIB) -c $< -o $@
 
-%.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+${DIR_BIN}/%.o: ${DIR_EPD}/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+${DIR_BIN}/%.o: ${DIR_FONTS}/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+${DIR_BIN}/%.o: ${DIR_GUI}/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+${DIR_BIN}/%.o: ${DIR_Examples}/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+${DIR_BIN}/%.d: ${DIR_Config}/%.c
+	@set -e; rm -f $@; \
+	$(CC) -MM $(CFLAGS) $< | sed 's,^,$(DIR_BIN)/,' > $@
+
+-include $(patsubst %.c,${DIR_BIN}/%.d,$(notdir ${OBJ_C}))
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -rf $(DIR_BIN)/* $(TARGET)
