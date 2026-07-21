@@ -2,24 +2,26 @@
 CC = gcc
 CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
-# Sökvägar till Waveshares moduler och headers
-DIR_Config = -I./lib/Config 
-DIR_Fonts = -I./lib/Fonts
-DIR_Graphics = -I./lib/GUI
-DIR_IT8951 = -I./lib/IT8951
+# Katalogdeklarationer
+DIR_Config   = ./lib/Config
+DIR_EPD      = ./lib/e-Paper
+DIR_FONTS    = ./lib/Fonts
+DIR_GUI      = ./lib/GUI
+DIR_Examples = ./examples
+DIR_BIN      = ./bin
 
 # Inkluderingskataloger
-INCLUDES = -I$(DIR_Config) -I$(DIR_Fonts) -I$(DIR_Graphics) -I$(DIR_IT8951)
+INCLUDES = -I$(DIR_Config) -I$(DIR_EPD) -I$(DIR_FONTS) -I$(DIR_GUI)
 
 # Bibliotek som krävs för SPI, trådar och matematik
 LIBS = -lbcm2835 -lpthread -lm
 
-# Källfiler inklusive font24.c
+# Källfiler
 SRCS = main.c \
        $(DIR_Config)/DEV_Config.c \
-       $(DIR_Graphics)/GUI_Paint.c \
-       $(DIR_IT8951)/IT8951.c \
-       $(DIR_Fonts)/font24.c
+       $(DIR_GUI)/GUI_Paint.c \
+       $(DIR_EPD)/EPD_IT8951.c \
+       $(DIR_FONTS)/font24.c
 
 # Objektfiler
 OBJS = $(SRCS:.c=.o)
