@@ -32,3 +32,8 @@ https://www.waveshare.com/wiki/6inch_HD_e-Paper_HAT?srsltid=AfmBOorzHeeWp2Pp1WDU
 * Keyboarden läses på /dev/input/event0. Det är en TADA68 med möjlighet till QMK-programmering.
 * Taktil tryckknapp (för säker avstängning).
 * Vipp-brytare (för att bryta strömmen permanent).
+
+## Svensk ASCII ##
+Svensk ASCII är en 7-bits teckenkod som användes i Sverige innan Latin-1 (ISO-8859-1) fick genomslag. SUNET:s rekommendation att använda svensk 7-bits teckenkod i datorpost upphörde den 1 januari 1995.
+
+Den kan påträffas i äldre utrustning eller applikationer, där resultatet kan bli att bokstäverna "å ä ö Å Ä Ö" visas som tecknen "} { | ] [ \" eller vice versa. Det är dessa tecken som ersatts i original-ASCII för att skapa den svenska varianten.
