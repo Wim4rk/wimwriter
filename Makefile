@@ -1,6 +1,6 @@
 # Kompilator och prestandaflaggor för ARMv6 (Raspberry Pi Zero W)
 CC = gcc
-CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
+CFLAGS = -O3 -Wall -g -D BCM
 
 # Katalogsökvägar för projektet
 DIR_Config   = ./lib/Config

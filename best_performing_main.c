@@ -21,41 +21,24 @@ typedef struct {
 // Global cache-array för standard-ASCII (0-127)
 GlyphCache ascii_cache[128];
 
-// Funktion: Förbered cachen vid uppstart
+// 2. Funktion: Förbered cachen vid uppstart
 void init_glyph_cache(sFONT *font) {
-    // Avrunda bredden uppåt till närmaste multipel av 8 för att undvika förskjutning
-    UWORD aligned_width = (font->Width + 7) & ~7;
-    UWORD height = font->Height;
-    
-    // Beräkna hur mycket minne en 1-bpp-ruta kräver
-    UDOUBLE image_size = ((aligned_width * height) / 8);
-    UBYTE *temp_image = (UBYTE *)malloc(image_size);
-    
-    // Initiera en virtuell canvas för ett enda tecken
-    // 1 representerar WHITE i standardkonfigurationen
-    Paint_NewImage(temp_image, aligned_width, height, 0, 1); 
-    Paint_SelectImage(temp_image);
-    
-    for (int i = 32; i < 127; i++) {
-        Paint_Clear(1); // Rensa bakgrunden till vit
-        
-        // Rita tecknet via det beprövade biblioteket
-        // 0 = BLACK (textfärg), 1 = WHITE (bakgrund)
-        Paint_DrawChar(0, 0, (char)i, font, 0, 1); 
-        
-        // Spara den formaterade rutan i vår array
-        memcpy(ascii_cache[i].bitmap, temp_image, image_size);
-        ascii_cache[i].width = aligned_width; // Viktigt: använd den justerade bredden
-        ascii_cache[i].height = height;
+    int bytes_per_line = (font->Width + 7) / 8;
+    int bytes_per_char = font->Height * bytes_per_line;
+
+    for (int i = 32; i < 127; i++) { // ASCII 32 (Space) till 126 (~)
+        int offset = (i - ' ') * bytes_per_char;
+
+        // Kopiera över den monokroma datan från font-filen till RAM-cachen
+        memcpy(ascii_cache[i].bitmap, &font->table[offset], bytes_per_char);
+        ascii_cache[i].width = font->Width;
+        ascii_cache[i].height = font->Height;
         ascii_cache[i].is_cached = true;
     }
-    
-    free(temp_image);
-    printf("Glyph-cache byggd via Paint.\n");
+    printf("Glyph-cache förberedd i RAM.\n");
 }
 
-
-// Funktion: Rendera ett tecken direkt från cachen
+// 3. Funktion: Rendera ett tecken direkt från cachen
 void render_cached_char(char c, int x, int y, UDOUBLE target_addr) {
     // Om tecknet inte finns i cachen hoppar vi över
     if (c < 0 || c > 127 || !ascii_cache[(int)c].is_cached) {
@@ -68,11 +51,7 @@ void render_cached_char(char c, int x, int y, UDOUBLE target_addr) {
     // Peka in i vår pre-allokerade RAM-cache för att undvika CPU-cykler
     load_info.Source_Buffer_Addr = ascii_cache[(int)c].bitmap;
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-
-    // Andrat från 2BPP till 8BPP. Waveshares 1-bp-funktion förväntar sig
-    // ofta denna flagga i strukturen även om datan skickas som 1-bpp.
-    load_info.Pixel_Format = IT8951_8BPP;
-
+    load_info.Pixel_Format = IT8951_2BPP;
     load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
