@@ -3,10 +3,10 @@ CC = gcc
 CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
 # Sökvägar till Waveshares moduler och headers
-DIR_Config = ./Config
-DIR_Fonts = ./Fonts
-DIR_Graphics = ./GUI
-DIR_IT8951 = ./IT8951
+DIR_Config = -I./lib/Config 
+DIR_Fonts = -I./lib/Fonts
+DIR_Graphics = -I./lib/GUI
+DIR_IT8951 = -I./lib/IT8951
 
 # Inkluderingskataloger
 INCLUDES = -I$(DIR_Config) -I$(DIR_Fonts) -I$(DIR_Graphics) -I$(DIR_IT8951)
