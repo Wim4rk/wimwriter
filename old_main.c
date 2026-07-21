@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <linux/input.h>
@@ -89,7 +88,7 @@ int main() {
     }
 
     printf("Modul initierad. Startar EPD...\n");
-    
+
     // Init-anrop
     Dev_Info = EPD_IT8951_Init(2140);
     printf("Vi klarade init-anropet!");
@@ -98,7 +97,7 @@ int main() {
     // Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
 
     // EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, 0);
-    
+
     printf("Skärmstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
 
     UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
@@ -121,14 +120,14 @@ int main() {
 }
 
     // Initial Clear
-    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0); 
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
 
     // Öppna input
     int fd = open("/dev/input/event0", O_RDONLY);
     if (fd == -1) return 1;
 
     printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
-    
+
     struct input_event ev;
     while (read(fd, &ev, sizeof(ev)) > 0) {
         if (ev.type == EV_KEY && ev.value == 1) {
@@ -144,7 +143,7 @@ int main() {
             //Skriv ut glyfen
             render_char_fast('A', cursor_x, cursor_y, target_addr, &load_img_info, &area_img_info);
 
-            cursor_x += Font20.Width;           
+            cursor_x += Font20.Width;
 
             if(cursor_x > (Dev_Info.Panel_W - Font20.Width)) {
                 cursor_x = 100;
