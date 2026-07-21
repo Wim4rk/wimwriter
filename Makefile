@@ -1,4 +1,4 @@
-# Kompilator och flaggor
+# Kompilator och prestandaflaggor för ARMv6 (Pi Zero W)
 CC = gcc
 CFLAGS = -O3 -Wall -g -D BCM2835_SPI -D USE_BCM2835
 
@@ -11,10 +11,10 @@ DIR_IT8951 = ./IT8951
 # Inkluderingskataloger
 INCLUDES = -I$(DIR_Config) -I$(DIR_Fonts) -I$(DIR_Graphics) -I$(DIR_IT8951)
 
-# Bibliotek som krävs (bcm2835 för SPI, samt pthread och m för matematik)
+# Bibliotek som krävs för SPI, trådar och matematik
 LIBS = -lbcm2835 -lpthread -lm
 
-# Källfiler
+# Källfiler inklusive font24.c
 SRCS = main.c \
        $(DIR_Config)/DEV_Config.c \
        $(DIR_Graphics)/GUI_Paint.c \

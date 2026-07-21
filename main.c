@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "DEV_Config.h"
-#include "GUI_Paint.h"
-#include "IT8951.h"
-#include "fonts.h"
+#include "lib/Config/DEV_Config.h"
+#include "lib/GUI/GUI_Paint.h"
+#include "lib/e-Paper/IT8951.h"
+#include "lib/Fonts/fonts.h"
 
 #define LCD_WIDTH   1448
 #define LCD_HEIGHT  1072
