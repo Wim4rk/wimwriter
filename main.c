@@ -128,8 +128,16 @@ int main() {
     printf("Modul initierad. Startar EPD...\n");
 
     // Init-anrop
+    printf("Init-anrop\n");
     Dev_Info = EPD_IT8951_Init(2140);
-    printf("Init-anrop")
+
+    // Skriv ut skärmens specifikationer och versioner i terminalen
+        printf("--- IT8951 Status ---\n");
+        printf("Panelstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+        printf("FW-version:   %.16s\n", (char *)Dev_Info.FW_Version);
+        printf("LUT-version:  %.16s\n", (char *)Dev_Info.LUT_Version);
+        printf("---------------------\n");
+        fflush(stdout);
 
     UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
 
@@ -140,8 +148,8 @@ int main() {
     if (Dev_Info.Panel_W == 0) {
         printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
     } else {
-        printf("Kontakt upprättad\nPanel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
-}
+        printf("Kontakt upprättad: Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+    }
 
     // Initial Clear
     EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
@@ -155,9 +163,6 @@ int main() {
     struct input_event ev;
     while (read(fd, &ev, sizeof(ev)) > 0) {
         if (ev.type == EV_KEY && ev.value == 1) {
-
-            // Förbered ett hårdkodat tecken
-            prepare_char_bitmap('A', &load_img_info);
 
             // Debug:
             printf("Tangent tryckt: kod %d\n", ev.code);
