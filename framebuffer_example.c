@@ -4,9 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "DEV_Config.h"
-#include "GUI_Paint.h"
-#include "EPD_IT8951.h"
+
+#include "lib/GUI/GUI_Paint.h"
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
 
 // Storlek för 1-bpp framebuffer: (1448 * 1072) / 8 = 194464 bytes
 #define BUFFER_SIZE (1448 * 1072 / 8)

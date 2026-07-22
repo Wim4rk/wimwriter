@@ -1,12 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include "DEV_Config.h"
-#include "IT8951.h"
-#include "GUI_Paint.h"
 
-// GCC för att bygga detta exempel:
-// gcc -O3 -Wall -g -D BCM -I. -I./lib/Config -I./lib/e-Paper -I./lib/Fonts -I./lib/GUI main.c ./lib/Config/DEV_Config.c ./lib/GUI/GUI_Paint.c ./lib/e-Paper/EPD_IT8951.c ./lib/Fonts/font24.c -o wimwriter -lbcm2835 -lpthread -lmgcc shapes_test.c IT8951.c DEV_Config.c GUI_Paint.c -o shapes_test -I. -lbcm2835 -lpthread -D BCM
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+// gcc shapes.c IT8951.c DEV_Config.c GUI_Paint.c -o shapes -I. -lbcm2835 -lpthread -D BCM
 
 int main(int argc, char *argv[])
 {
