@@ -6,8 +6,6 @@
 #include "lib/e-Paper/EPD_IT8951.h"
 #include "lib/Fonts/fonts.h"
 
-// gcc shapes.c IT8951.c DEV_Config.c GUI_Paint.c -o shapes -I. -lbcm2835 -lpthread -D BCM
-
 int main(int argc, char *argv[])
 {
     // 1. Initiera hårdvara och IT8951-kontroller

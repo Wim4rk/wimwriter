@@ -1,51 +1,25 @@
-#include <stdint.h>
+#include "lib/GUI/GUI_Paint.h"
+#include "lib/e-Paper/EPD_IT8951.h"
 #include <stdlib.h>
-#include <string.h>
 
-// Skärmens upplösning (IT8951 6-tum HD i native-orientering)
-#define EPD_WIDTH 1448
-#define EPD_HEIGHT 1072
-
-// 1-bpp innebär att varje byte rymmer 8 pixlar.
-// Bredd i bytes blir uppåt-avrundat om det inte är jämnt delbart med 8.
-#define EPD_WIDTH_BYTES (EPD_WIDTH / 8)
-#define FRAMEBUFFER_SIZE (EPD_WIDTH_BYTES * EPD_HEIGHT)
-
-// Vår globala framebuffer i RAM
-uint8_t *framebuffer;
-
-// Utkast till initiering
-int init_framebuffer() {
-    // calloc nollställer minnet (ofta lika med vit skärm, beroende på skärmens logik)
-    framebuffer = (uint8_t *)calloc(FRAMEBUFFER_SIZE, sizeof(uint8_t));
-    if (framebuffer == NULL) {
-        return -1; // Minnesallokeringsfel
-    }
-    return 0;
-}
-
-// Förslag på funktion för att sätta en enskild pixel
-// Origo (0,0) antas vara övre vänstra hörnet.
-void set_pixel(int x, int y, int black) {
-    if (x < 0 || x >= EPD_WIDTH || y < 0 || y >= EPD_HEIGHT) {
-        return; // Förhindrar skrivning utanför skärmens gränser
+int init_display(IT8951_Dev_Info *dev_info, UDOUBLE *target_addr) {
+    if (DEV_Module_Init() != 0) {
+        return -1;
     }
 
-    int byte_index = (y * EPD_WIDTH_BYTES) + (x / 8);
-    int bit_offset = 7 - (x % 8); // Mest signifikanta biten (MSB) till vänster
+    printf("Modul initierad. Startar EPD...\n");
+    fflush(stdout);
 
-    if (black) {
-        // Sätt biten till 1
-        framebuffer[byte_index] |= (1 << bit_offset);
-    } else {
-        // Sätt biten till 0
-        framebuffer[byte_index] &= ~(1 << bit_offset);
-    }
-}
+    // Init-anrop med VCOM satt till 2140 (-2.14V)
+    Dev_Info = EPD_IT8951_Init(2140);
+    printf("Init-anrop avklarat.\n");
+    fflush(stdout);
 
-// Frigör minnet vid "Safe Shutdown"
-void free_framebuffer() {
-    if (framebuffer != NULL) {
-        free(framebuffer);
-    }
+    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Bygg upp font-cachen i minnet före skärmrensningen
+    init_glyph_cache(&Font24);
+
+    // Rensa skärmen vid uppstart
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
 }

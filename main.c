@@ -8,6 +8,7 @@
 
 #include "lib/Config/DEV_Config.h"
 #include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/GUI/GUI_paint.h"
 #include "lib/Fonts/fonts.h"
 
 // 1. Datastruktur för den pre-genererade cachen
@@ -26,30 +27,30 @@ void init_glyph_cache(sFONT *font) {
     // Avrunda bredden uppåt till närmaste multipel av 8 för att undvika förskjutning
     UWORD aligned_width = (font->Width + 7) & ~7;
     UWORD height = font->Height;
-    
+
     // Beräkna hur mycket minne en 1-bpp-ruta kräver
     UDOUBLE image_size = ((aligned_width * height) / 8);
     UBYTE *temp_image = (UBYTE *)malloc(image_size);
-    
+
     // Initiera en virtuell canvas för ett enda tecken
     // 1 representerar WHITE i standardkonfigurationen
-    Paint_NewImage(temp_image, aligned_width, height, 0, 1); 
+    Paint_NewImage(temp_image, aligned_width, height, 0, 1);
     Paint_SelectImage(temp_image);
-    
+
     for (int i = 32; i < 127; i++) {
         Paint_Clear(1); // Rensa bakgrunden till vit
-        
+
         // Rita tecknet via det beprövade biblioteket
         // 0 = BLACK (textfärg), 1 = WHITE (bakgrund)
-        Paint_DrawChar(0, 0, (char)i, font, 0, 1); 
-        
+        Paint_DrawChar(0, 0, (char)i, font, 0, 1);
+
         // Spara den formaterade rutan i vår array
         memcpy(ascii_cache[i].bitmap, temp_image, image_size);
         ascii_cache[i].width = aligned_width; // Viktigt: använd den justerade bredden
         ascii_cache[i].height = height;
         ascii_cache[i].is_cached = true;
     }
-    
+
     free(temp_image);
     printf("Glyph-cache byggd via Paint.\n");
 }
@@ -88,12 +89,7 @@ void render_cached_char(char c, int x, int y, UDOUBLE target_addr) {
     EPD_IT8951_Display_AreaBuf(x, y, area_info.Area_W, area_info.Area_H, 6, target_addr);
 }
 
-// 4. Huvudprogram och inmatningsloop
-int main() {
-    int cursor_x = 100;
-    int cursor_y = 100;
-    IT8951_Dev_Info Dev_Info;
-
+static int init_display(IT8951_Dev_Info *dev_info, UDOUBLE *target_addr) {
     if (DEV_Module_Init() != 0) {
         return -1;
     }
@@ -102,17 +98,31 @@ int main() {
     fflush(stdout);
 
     // Init-anrop med VCOM satt till 2140 (-2.14V)
-    Dev_Info = EPD_IT8951_Init(2140);
+    *dev_info = EPD_IT8951_Init(2140);
     printf("Init-anrop avklarat.\n");
     fflush(stdout);
 
-    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+    *target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
 
     // Bygg upp font-cachen i minnet före skärmrensningen
-    init_glyph_cache(&Font24);
+    // init_glyph_cache(&Font24);
 
     // Rensa skärmen vid uppstart
     EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+
+    return 0;
+}
+
+// 4. Huvudprogram och inmatningsloop
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+    IT8951_Dev_Info Dev_Info;
+
+    if (init_display_hardware(&Dev_nfo, &target_addr != 0)) {
+        printf("Kunde inte initiera display.\n");
+        return 1;
+    }
 
     // Öppna inmatningsströmmen från tangentbordet
     int fd = open("/dev/input/event0", O_RDONLY);
