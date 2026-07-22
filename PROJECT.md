@@ -2,25 +2,52 @@
 
 ## Prio 1: Det synbarligen oöverstigliga problemet som måste lösas
 
-Innan något annat kan göras måste vi kunna rendera text på skärmen. Vi behöver lösa **glyph-caching**. Några strategi-förslag utan inbördes prioritet:
+Innan något annat kan göras måste vi kunna rendera text på skärmen. Vi behöver lösa **glyph-caching**.
 
-### 1. En virtuell skärm i RAM
-Skapa en fullstor framebuffer i RAM-minnet på Pi Zeron. Eftersom vi arbetar i 1-bpp (svartvitt) tar en skärm på $1448 \times 1072$ pixlar enbart cirka 194 KB RAM ((1448 * 1072) / 8). Detta är extremt lättdrivet även för ARMv6. Vi uppdaterarr bläckskärmen endast med förändringar.
+Det finns för närvarande en olöst teknisk utmaning gällande datatyp och format, där styrenhetens Packed Pixel-läge förväntar sig ett annat format än det bitmappsformat som de medföljande fonterna lagras i.
 
-### 2. Bounding boxes
-För att uppdatera e-bläcksskärmen blixtsnabbt skickar vi inte hela skärmen (vilket vore för långsamt), utan vi gör en partiell uppdatering.
-* Vi beräknar en bounding box (den rektangel som ändrats).
-* Vi skickar en perfekt byte-alignerad 1-bpp-ruta till IT8951.
+### Resultat av felsökning:
+
+Det vi ser i Waveshares källkod är att deras implementation av 1-bpp (svartvitt) är ett fulhack som krockar med vår minneshantering.Här är de kritiska insikterna från din sökning i källkoden:
+
+IT8951_1BPP existerar inte: Din sökning efter detta macro returnerade helt tomt. Biblioteket förlitar sig uteslutande på 2BPP, 4BPP och 8BPP.
+
+**Den inofficiella lösningen:** Titta på bibliotekets egna kommentarer: //Use 8bpp to set 1bpp. När du anropar 1-bpp-funktionen ställer biblioteket i själva verket in hårdvaran på 8-bitars färgdjup (IT8951_8BPP).
+
+**Minnesmatematiken:** I funktionen castas din buffert till 16-bitars ord (UWORD*), och bredden beräknas som Area_Img_Info->Area_W/2. Om en ruta är 32 pixlar bred, skickar kontrollern alltså 16 UWORDs över SPI, vilket är exakt 32 bytes.
+
+### Kärnproblemet:
+Waveshares "1-bpp"-funktion förväntar sig en uppackad buffert där 1 pixel = 1 hel byte (exempelvis 0x00 för svart och 0xFF för vitt). Vår nuvarande cache packar 8 pixlar i en enda byte, vilket rimmar väl med strategin om en extremt lättdriven virtuell skärm i RAM. Men när vi skickar denna kompakta buffert till Waveshares drivrutin, tolkar den varje packad byte som en enda pixel och fortsätter sedan att läsa data långt utanför buffertens minnesområde.
+
+### Påbörjat försök till lösning:
+Vi har skapat ett eget teckensnitt. Det omfattar Index 0x00 (' ') till 0x7F (' ').
+
+När vi nu går över till att använda ett eget 32x64-typsnitt, har vi ett par olika förslag på hur vi kan rendea det:
+* Alternativ 1 (Snabbast körning): Vi sparar typsnittet helt uppackat. En bokstav tar då cirka 2 KB i anspråk istället för 256 bytes. Det tar marginellt mer plats i den färdiga binären, men vi kan mata datan rakt in i kontrollern utan processorkraft.
+* Alternativ 2 (Minst minnesavtryck): Vi behåller idén om en 1-bpp-array (där 1 bit = 1 pixel) för att spara minne och underlätta framtida framebuffer-synkronisering. Sedan skriver vi ett förslag till en egen liten uppackningsfunktion i C som blixtsnabbt översätter bits till bytes i en tillfällig buffert precis innan SPI-överföringen sker.
+
+I enlighet med projektsprioriteringarna nedan så skall vi i första hand fokusera på så låg latens som möjligt.
 
 ---
 
-## Övriga specifikationer
+## Projektetspecifikationer
 
-### 1. Hårdvarukonfiguration
+### 1. Projektprioriteringar (Kärnfokus)
 
-Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att använda de delar du redan äger och att maximera drifttiden:
+För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
 
-* **Processor:** Raspberry Pi Zero W (v1). Vald framför Zero 2 W eftersom den har fastlödda headers färdiga att använda, samt en extremt låg strömförbrukning (ARMv6-arkitektur).
+1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
+2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
+3. **Säkerhet för data:** All text ska skrivas kontinuerligt till SD-kortet för att förhindra förlust vid plötsligt spänningsfall, samt synkas säkert och självständigt mot en NAS eller till Dropbox.
+4. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
+
+---
+
+### 2. Hårdvarukonfiguration
+
+Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att använda de delar jag redan äger och att maximera drifttiden:
+
+* **Processor:** Raspberry Pi Zero W (v1). Vald framför Zero 2 W eftersom den har en extremt låg strömförbrukning (ARMv6-arkitektur).
 * **Skärm:** 6-tums e-bläcksskärm HD ansluten via ribbon-kablar till en dedikerad **IT8951 Driver HAT**, som i sin tur pratar med din Pi via **SPI**. 
 - VCOM = -2.14 vilket oftast noteras 2140
 - Panel(W,H) = (1448,1072)
@@ -38,47 +65,36 @@ Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på 
 
 ---
 
-### 2. Projektprioriteringar (Kärnfokus)
-
-För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
-
-1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
-2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
-3. **Säkerhet för data:** All text ska skrivas kontinuerligt till SD-kortet för att förhindra förlust vid plötsligt spänningsfall, samt synkas säkert och självständigt mot en NAS eller till Dropbox.
-4. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
-
----
-
 ### 3. Beslut kring Mjukvara och Arkitektur
 
 För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi tagit följande strategiska beslut för mjukvaran:
 
 #### Inmatning & Logik (C-baserat "Bare-Metal"-tänk)
 
-* Vi använder C. Python (och bibliotek som Pillow) är för tunga för att uppnå minimal latens.
-* Vi bygger en **C-baserad renderingsmotor** som körs direkt mot Waveshares officiella C-bibliotek (bcm2835-baserat) för att styra IT8951 direkt via SPI.
-* **Glyph Caching:** Vid uppstart renderar C-programmet ditt önskade typsnitt (motsvarande storlek 10–12 i Word, vilket på HD-skärmen motsvarar cirka 45–50 pixlar höga bokstäver) och sparar dem som monokroma ($32 \times 64$px) bitmapps-arrayer direkt i RAM-minnet (`font.h`). Beroende på hur eink-skärmen fungerar kan det vara nödvändigt med 32px eller 64px. Möjligen med padding. Just nu finns en renderad ascii-fil: lib/Fonts/font20.c
+* Vi bygger en **C-baserad renderingsmotor** som körs direkt mot Waveshares officiella C-bibliotek (bcm2835-baserat) för att styra IT8951 direkt via SPI. Python (och bibliotek som Pillow) är för tunga för att uppnå minimal latens.
+* **Glyph Caching:** Vid uppstart renderar C-programmet ett typsnitt och sparar dem som monokroma ($32 \times 64$px) bitmapps-arrayer direkt i RAM-minnet.
 * När en tangent trycks ned ska `evdev` läsa av detta. Programmet ska göra en blixtsnabb `memcpy` av rätt bokstavs-bitmapp och skicka endast den lilla förändrade rutan (damage box, ca 256 bytes) över SPI.
-* **Undvika "ghosting"**
-
-När du kör i A2-läge (som är optimalt för din skrivmaskinsvision) ackumuleras "spökskuggor" snabbare än i GC16. I C kan du enkelt implementera en enkel räknare i din huvudloop:
-* Lättvikts-uppdatering: Varje tangenttryck triggar en IT8951_Display_Area (Partial Refresh) i A2-läge.
-* Fullständig uppdatering: När char_count % 500 == 0 (eller vid en specifik knapptryckning), anropar du funktionen för IT8951_Clear_Screen följt av en fullständig ominitiering av hela ytan.
 
 #### Skärmstyrning (IT8951-optimering)
 
 * **Skrivläge (A2-mode):** Under aktivt skrivande körs skärmen i det monokroma, asynkrona **A2 (Animation)-läget**.
-* **Tyst städning (DU-mode):** Vid naturliga pauser, som vid tryck på `Enter` (ny rad), ska den aktuella raden eller skärmen uppdateras i det skarpare **DU (Direct Update)-läget** för att rensa bort eftersläpningar (ghosting).
-* **Helskärms-refresh:** En fullständig nollställning (flash) görs endast vid stora händelser (t.ex. sidbyte, retur för nytt stycke, eller jump enligt nedan).
-* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre tredjedelen av skärmen och prompten följer med. En bra lösning för att navigera uppåt kan vara det motsvarande, texten hoppar två tredjedelar av skrivytans höjd.Konventionell scroll leder till att för mycket av skärmen uppdateras för ofta.
+* **Tyst städning (DU-mode):** Vid naturliga pauser, som vid inaktivitet eller när skrivprompten når skärmens slut, ska den aktuella skärmen uppdateras i det skarpare **DU (Direct Update)-läget** för att rensa bort eftersläpningar (ghosting).
+* **Helskärms-refresh:** En fullständig nollställning (flash) görs endast vid stora händelser (t.ex. sidbyte, eller *jump* enligt nedan).
+* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre tredjedelen av skärmen och prompten följer med. Texten hoppar två tredjedelar av skrivytans höjd. Konventionell scroll leder till att för mycket av skärmen uppdateras för ofta.
+
+#### Skrivprogram
+
+Gränssnittet skall vara minimalt. I stort sett bara textytan. Piltangenterna ska kunna stega horisontellt och vertikalt för enklaste navigering. Funktionsknapparna skall nyttjas för att utföra specifika åtgärder; öppna- och skapa dokument, spara, synkronisera och liknande.
+
+Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning, annan statistik eller andra uppgifter.
 
 #### Nätverk & Synk (Tailscale + NAS)
 
-* **Helt självständig enhet:** Skrivmaskinen sköter allt själv på kommando, utan att du behöver interagera med en annan dator.
+* **Helt självständig enhet:** Skrivmaskinen sköter allt själv på kommando, utan att jag behöver använda en annan dator.
 * **Säker tunnel via Tailscale:** Vi installerar Tailscale på din Pi Zero W (fullt kompatibelt med ARMv6). Den tunnlar sig automatiskt och säkert in till din NAS så fort nätverket aktiveras.
 * **Okrypterad Rsync (Ingen dubbelkryptering):** Eftersom Tailscale (WireGuard) redan krypterar nätverkstrafiken, kör vi en **okrypterad `rsync` direkt mot din NAS rsync-port** över Tailscale-IP:n. Detta sparar massor av CPU-resurser och batteri på din Pi då vi helt slipper SSH-kryptering ovanpå VPN-krypteringen.
 * **Automatisk backup** Spara en version varje timme, varje dag, varannan dag, varje vecka, varje månad.
-* **On-demand (ctrl+q eller liknande):**
+* **On-demand (funktions-knapp):**
 1. Slå på WiFi (`rfkill unblock`).
 2. Vänta på anslutning till Tailscale-nätverket.
 3. Kör okrypterad Rsync-push till din NAS.
@@ -90,19 +106,6 @@ När du kör i A2-läge (som är optimalt för din skrivmaskinsvision) ackumuler
 * **Kompilering och drivrutiner:** Vi ska integrera Waveshares `Makefile`-logik och säkerställa att rätt flaggor (`-D BCM`) skickas till kompilatorn. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
 
 ---
-
-## Sammanfattning ##
-
-Vi har beslutat oss för att använda
-
-* OS: Raspberry Pi OS Bullseye (Debian 11)
-* Hårdvara: Pi Zero W med IT8951-drivkort. Just nu monterad som en shield eller hat. Bör senare kopplas till PINs på RPi för att vi ska komma åt oanvända PINs. All hårdvara fungerar, just nu drivs den på batteri.
-* Mjukvara: Waveshares bibliotek ligger här: ~/IT8951-ePaper/. Vårt arbetsområde, och vårt git-repo finns här: ~/IT8951-ePaper/Raspberry/
-* Drivrutin: SPI via det inbyggda BCM2835-biblioteket.
-
-## Identifierade tekniska utmaningar ##
-* **Renderingens innehåll:** För närvarande ritas endast en "bounding box" (fyrkant). Vi har bekräftat att kommunikationen fungerar, men behöver nu förstå hur en tecken-bitmappen ska läsas och skickas till skärmen.
-* **Datatyp och format:** Det råder en diskrepans mellan fontens lagringsformat (bitmapp) och vad IT8951-kontrollern förväntar sig i `Packed Pixel`-läget.
-
----
 *Projektet upprättad 2026-07-20.*
+
+*Senaste uppdateringen 2026-07-22*

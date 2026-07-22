@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <title>Svensk ASCII 32x64 Typsnittsgenerator</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; background: #f9f9f9; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #28a745; color: white; border: none; padding: 12px 20px; margin-top: 25px; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #218838; }
+        .preview-box { margin-top: 25px; padding: 15px; background: #f0f0f0; border-radius: 6px; border: 1px dashed #bbb; text-align: center; }
+        .preview-title { font-weight: bold; margin-bottom: 10px; display: block; }
+        canvas { border: 1px solid #000; background: #fff; margin: 0 10px; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Svensk ASCII (SIS 63 61 27) Typsnittsgenerator</h2>
+    <p>Skapar ett okomprimerat 32x64-format (1 byte per pixel). 0xFF = Vit bakgrund, 0x00 = Svart text.</p>
+
+    <label for="fontStyle">Typsnitt (Skrivmaskinsstil):</label>
+    <select id="fontStyle" onchange="updatePreview()">
+        <option value="Courier New">Courier New (Standard Windows/Mac)</option>
+        <option value="Courier">Courier</option>
+        <option value="monospace">Standard Monospace</option>
+    </select>
+
+    <label for="fontSize">Typsnittsstorlek (pixlar):</label>
+    <input type="number" id="fontSize" value="46" oninput="updatePreview()">
+
+    <label for="xOffset">X-offset (Justera i sidled):</label>
+    <input type="number" id="xOffset" value="2" oninput="updatePreview()">
+
+    <label for="yOffset">Y-offset (Justera i höjdled / baslinje):</label>
+    <input type="number" id="yOffset" value="48" oninput="updatePreview()">
+
+    <label for="format">Utdataformat:</label>
+    <select id="format">
+        <option value="bin">Rå binärfil (.bin) - 256 KB</option>
+        <option value="c">C-Headerfil (.h) - Källkod</option>
+    </select>
+
+    <div class="preview-box">
+        <span class="preview-title">Realtidsgranskning av pixelblocken (32x64)</span>
+        <div>
+            <canvas id="previewCanvas1" width="32" height="64"></canvas>
+            <canvas id="previewCanvas2" width="32" height="64"></canvas>
+        </div>
+        <small style="color: #666; display: block; margin-top: 5px;">Visar tecknen 'Ä' (index 0x5B) och 'g' (index 0x67)</small>
+    </div>
+
+    <button onclick="generateFont()">Generera och ladda ner typsnitt</button>
+</div>
+
+<script>
+    const SWEDISH_ASCII_MAP = {
+        0x5B: 'Ä', 0x5C: 'Ö', 0x5D: 'Å', 0x5E: 'Ü',
+        0x7B: 'ä', 0x7C: 'ö', 0x7D: 'å', 0x7E: 'ü'
+    };
+
+    // Funktion för att rita ett enskilt tecken på en angiven canvas
+    function drawCharToCanvas(canvasId, charStr) {
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext('2d');
+        const fontName = document.getElementById('fontStyle').value;
+        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+        const xOffset = parseInt(document.getElementById('xOffset').value, 10);
+        const yOffset = parseInt(document.getElementById('yOffset').value, 10);
+
+        // Rensa ritytan till helt vit (0xFF)
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, 32, 64);
+
+        // Rita texten i rent svart (0x00)
+        ctx.fillStyle = "#000000";
+        ctx.font = `${fontSize}px "${fontName}"`;
+        ctx.fillText(charStr, xOffset, yOffset);
+    }
+
+    // Uppdaterar förhandsgranskningen direkt när användaren ändrar ett värde
+    function updatePreview() {
+        drawCharToCanvas('previewCanvas1', 'Ä');
+        drawCharToCanvas('previewCanvas2', 'g');
+    }
+
+    function generateFont() {
+        const fontName = document.getElementById('fontStyle').value;
+        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+        const xOffset = parseInt(document.getElementById('xOffset').value, 10);
+        const yOffset = parseInt(document.getElementById('yOffset').value, 10);
+        const outputFormat = document.getElementById('format').value;
+
+        const W = 32;
+        const H = 64;
+        const totalChars = 128;
+        const totalBytes = totalChars * W * H;
+
+        // Skapa en temporär dold canvas för själva exportloopen
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const rawBytes = new Uint8Array(totalBytes);
+        let byteIdx = 0;
+        let cCode = "#ifndef SWEDISH_FONT_32X64_H\n#define SWEDISH_FONT_32X64_H\n\n#include <stdint.h>\n\nconst uint8_t swedish_font_32x64[128][2048] = {\n";
+
+        for (let i = 0; i < totalChars; i++) {
+            let charToDraw = " ";
+            if (SWEDISH_ASCII_MAP[i]) {
+                charToDraw = SWEDISH_ASCII_MAP[i];
+            } else if (i >= 32 && i < 127) {
+                charToDraw = String.fromCharCode(i);
+            }
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = "#000000";
+            ctx.font = `${fontSize}px "${fontName}"`;
+            ctx.fillText(charToDraw, xOffset, yOffset);
+
+            const imgData = ctx.getImageData(0, 0, W, H).data;
+            let charBytes = [];
+
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const idx = (y * W + x) * 4;
+                    const brightness = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
+                    const val = (brightness < 128) ? 0x00 : 0xFF;
+
+                    rawBytes[byteIdx++] = val;
+                    if (outputFormat === 'c') {
+                        charBytes.push("0x" + val.toString(16).toUpperCase().padStart(2, '0'));
+                    }
+                }
+            }
+
+            if (outputFormat === 'c') {
+                const cleanChar = (i >= 32 && i < 127) ? charToDraw : ' ';
+                cCode += `    // Index 0x${i.toString(16).toUpperCase().padStart(2, '0')} ('${cleanChar}')\n    {\n        `;
+                for (let b = 0; b < charBytes.length; b++) {
+                    cCode += charBytes[b] + (b === charBytes.length - 1 ? "" : ", ");
+                    if ((b + 1) % 12 === 0 && b !== charBytes.length - 1) {
+                        cCode += "\n        ";
+                    }
+                }
+                cCode += "\n    },\n";
+            }
+        }
+
+        let blob, filename;
+        if (outputFormat === 'bin') {
+            blob = new Blob([rawBytes], { type: "application/octet-stream" });
+            filename = "swedish_font_32x64.bin";
+        } else {
+            cCode += "};\n\n#endif // SWEDISH_FONT_32X64_H\n";
+            blob = new Blob([cCode], { type: "text/plain;charset=utf-8" });
+            filename = "swedish_font_32x64.h";
+        }
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+
+    // Körs första gången sidan laddas för att rita startvärdena
+    window.onload = updatePreview;
+</script>
+
+</body>
+</html>
