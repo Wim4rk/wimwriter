@@ -16,10 +16,10 @@ int main(int argc, char *argv[])
     }
 
     UDOUBLE Vcom = 2140;
-    IT8951_Init(Vcom);
+    Dev_Info = EPD_IT8951_Init(Vcom);
 
     // 2. Allokera minne för den virtuella framebufferten
-    UWORD Imagesize = ((IT8951_Width % 8 == 0) ? (IT8951_Width / 8) : (IT8951_Width / 8 + 1)) * IT8951_Height;
+    UWORD Imagesize = ((Dev_Info.PanelW % 8 == 0) ? (Dev_Info.PanelW/ 8) : (Dev_Info.PanelW/ 8 + 1)) * Dev_Info.PanelH;
     UBYTE *BlackImage = (UBYTE *)malloc(Imagesize);
     if (BlackImage == NULL) {
         return -1;
