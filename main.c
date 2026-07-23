@@ -11,6 +11,8 @@
 // Inkludera din nya teckentabell istället för standard fonts.h
 #include "fonts/wim_font_courier.h"
 
+extern void EPD_IT8951_ReadBusy(void);
+
 #define GLYPH_W 32
 #define GLYPH_H 64
 #define GLYPH_SIZE_BYTES 2048 // 32 * 64 vid 8bpp
