@@ -1,37 +1,48 @@
-# Kompilator och prestandaflaggor för ARMv6 (Raspberry Pi Zero W)
-CC = gcc
-CFLAGS = -O3 -Wall -g -D BCM
+# ==========================================
+# Makefile för wimwriter (IT8951 Bare-Metal)
+# ==========================================
 
-# Katalogsökvägar för projektet
-DIR_Config   = ./lib/Config
-DIR_EPD      = ./lib/e-Paper
-DIR_FONTS    = ./lib/Fonts
-DIR_GUI      = ./lib/GUI
+# Sökvägar till Waveshares drivrutinsbibliotek
+DIR_CONFIG = ./lib/Config
+DIR_EPD    = ./lib/e-Paper
 
-# Inkluderingssökvägar
-INCLUDES = -I. -I$(DIR_Config) -I$(DIR_EPD) -I$(DIR_FONTS) -I$(DIR_GUI)
+# Sökvägar till GUI och gamla typsnitt (kan ofta inkluderas ifall
+# EPD_IT8951.c har inbyggda beroenden till dessa, även om vi kringgår dem)
+DIR_GUI    = ./lib/GUI
+DIR_FONTS  = ./lib/Fonts
 
-# Länkningsbibliotek (BCM2835 för SPI, pthread och m för matematik)
-LIBS = -lbcm2835 -lpthread -lm
+# Samla alla .c-filer i rotdatalogen (inkl. main.c) samt i lib-katalogerna
+SRC_C = $(wildcard *.c ${DIR_CONFIG}/*.c ${DIR_EPD}/*.c ${DIR_GUI}/*.c ${DIR_FONTS}/*.c)
 
-# Källfiler som ingår i kompileringen
-SRCS = main.c \
-       $(DIR_Config)/DEV_Config.c \
-       $(DIR_GUI)/GUI_Paint.c \
-       $(DIR_EPD)/EPD_IT8951.c \
-       $(DIR_FONTS)/font24.c
+# Byt ut .c mot .o för objektfilerna
+OBJ_O = $(patsubst %.c,%.o,${SRC_C})
 
-# Genererade objektfiler
-OBJS = $(SRCS:.c=.o)
-
-# Mål för binärfilen
+# Namnet på den färdiga kompileringen
 TARGET = wimwriter
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)
+# Kompilator
+CC = gcc
 
+# Kompilatorflaggor:
+# -Wall: Visa alla varningar
+# -O3: Maximal hastighetsoptimering (viktigt för ARMv6-processorn)
+# -D BCM & -DUSE_BCM2835_LIB: Säger till DEV_Config.c att vi använder bcm2835 för SPI/GPIO
+CFLAGS = -Wall -O3 -D BCM -DUSE_BCM2835_LIB
+
+# Nödvändiga bibliotek (bcm2835 för hårdvara, math, realtid, pthreads)
+LIB = -lbcm2835 -lm -lrt -lpthread
+
+# Huvudmål: Länka samman allt till den färdiga binären
+$(TARGET): $(OBJ_O)
+	@echo "Länkar samman $(TARGET)..."
+	$(CC) $(CFLAGS) $(OBJ_O) -o $@ $(LIB)
+
+# Kompilera varje .c-fil till en .o-fil
 %.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	@echo "Kompilerar $<..."
+	$(CC) $(CFLAGS) -c $< -o $@
 
+# Rensningskommando (kör 'make clean' för att ta bort gamla byggfiler)
 clean:
-	rm -f $(OBJS) $(TARGET)
+	@echo "Städar upp objektfiler och binär..."
+	rm -f $(OBJ_O) $(TARGET)

@@ -1,0 +1,188 @@
+// Utdata av sökningar i lib/e-Paper/EPD_IT8951.c
+
+olov@writer:~/IT8951-ePaper/Raspberry $ grep -A 20 "EPD_IT8951_Display_Area(" lib/e-Paper/EPD_IT8951.c
+void EPD_IT8951_Display_Area(UWORD X,UWORD Y,UWORD W,UWORD H,UWORD Mode)
+{
+    UWORD Args[5];
+    Args[0] = X;
+    Args[1] = Y;
+    Args[2] = W;
+    Args[3] = H;
+    Args[4] = Mode;
+    //0x0034
+    EPD_IT8951_WriteMultiArg(USDEF_I80_CMD_DPY_AREA, Args,5);
+}
+
+
+
+/******************************************************************************
+function :	EPD_IT8951_Display_AreaBuf
+parameter:
+******************************************************************************/
+void EPD_IT8951_Display_AreaBuf(UWORD X,UWORD Y,UWORD W,UWORD H,UWORD Mode, UDOUBLE Target_Memory_Addr)
+{
+    UWORD Args[7];
+--
+        EPD_IT8951_Display_Area(X,Y,W,H,Mode);
+    }
+    else
+    {
+        EPD_IT8951_Display_AreaBuf(X,Y,W,H,Mode,Target_Memory_Addr);
+    }
+
+    EPD_IT8951_WaitForDisplayReady();
+
+    EPD_IT8951_WriteReg(UP1SR+2, EPD_IT8951_ReadReg(UP1SR+2) & ~(1<<2) );
+}
+
+
+/******************************************************************************
+function :	Enhanced driving capability
+parameter:  Enhanced driving capability for IT8951, in case the blurred display effect
+******************************************************************************/
+void Enhance_Driving_Capability(void)
+{
+    UWORD RegValue = EPD_IT8951_ReadReg(0x0038);
+    Debug("The reg value before writing is %x\r\n", RegValue);
+--
+    EPD_IT8951_Display_Area(0, 0, Dev_Info.Panel_W, Dev_Info.Panel_H, Mode);
+
+    free(Frame_Buf);
+    Frame_Buf = NULL;
+}
+
+
+/******************************************************************************
+function :	EPD_IT8951_1bp_Refresh
+parameter:
+******************************************************************************/
+void EPD_IT8951_1bp_Refresh(UBYTE* Frame_Buf, UWORD X, UWORD Y, UWORD W, UWORD H, UBYTE Mode, UDOUBLE Target_Memory_Addr, bool Packed_Write)
+{
+    IT8951_Load_Img_Info Load_Img_Info;
+    IT8951_Area_Img_Info Area_Img_Info;
+
+    EPD_IT8951_WaitForDisplayReady();
+
+    Load_Img_Info.Source_Buffer_Addr = Frame_Buf;
+    Load_Img_Info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    //Use 8bpp to set 1bpp
+--
+        EPD_IT8951_Display_Area(X,Y,W,H, GC16_Mode);
+    }
+    else
+    {
+        EPD_IT8951_Display_AreaBuf(X,Y,W,H, GC16_Mode,Target_Memory_Addr);
+    }
+}
+
+
+
+
+/******************************************************************************
+function :	EPD_IT8951_4bp_Refresh
+parameter:
+******************************************************************************/
+void EPD_IT8951_4bp_Refresh(UBYTE* Frame_Buf, UWORD X, UWORD Y, UWORD W, UWORD H, bool Hold, UDOUBLE Target_Memory_Addr, bool Packed_Write)
+{
+    IT8951_Load_Img_Info Load_Img_Info;
+    IT8951_Area_Img_Info Area_Img_Info;
+
+    EPD_IT8951_WaitForDisplayReady();
+--
+        EPD_IT8951_Display_Area(X,Y,W,H, GC16_Mode);
+    }
+    else
+    {
+        EPD_IT8951_Display_AreaBuf(X,Y,W,H, GC16_Mode,Target_Memory_Addr);
+    }
+}
+
+
+/******************************************************************************
+function :	EPD_IT8951_8bp_Refresh
+parameter:
+******************************************************************************/
+void EPD_IT8951_8bp_Refresh(UBYTE *Frame_Buf, UWORD X, UWORD Y, UWORD W, UWORD H, bool Hold, UDOUBLE Target_Memory_Addr)
+{
+    IT8951_Load_Img_Info Load_Img_Info;
+    IT8951_Area_Img_Info Area_Img_Info;
+
+    EPD_IT8951_WaitForDisplayReady();
+
+    Load_Img_Info.Source_Buffer_Addr = Frame_Buf;
+--
+        EPD_IT8951_Display_Area(X, Y, W, H, GC16_Mode);
+    }
+    else
+    {
+        EPD_IT8951_Display_AreaBuf(X, Y, W, H, GC16_Mode, Target_Memory_Addr);
+    }
+}
+olov@writer:~/IT8951-ePaper/Raspberry $ grep -A 15 "EPD_IT8951_WriteMuitiData" lib/e-Paper/EPD_IT8951.c
+void EPD_IT8951_WriteMuitiData(UWORD* Data_Buf, UDOUBLE Length)
+{
+    //Set Preamble for Write Command
+	UWORD Write_Preamble = 0x0000;
+
+    EPD_IT8951_ReadBusy();
+
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+	DEV_SPI_WriteByte(Write_Preamble>>8);
+	DEV_SPI_WriteByte(Write_Preamble);
+
+    EPD_IT8951_ReadBusy();
+
+    for(UDOUBLE i = 0; i<Length; i++)
+    {
+--
+        EPD_IT8951_WriteMuitiData(Source_Buffer, Source_Buffer_Length);
+    }
+    else
+    {
+        for(UDOUBLE i=0; i<Source_Buffer_Height; i++)
+        {
+            for(UDOUBLE j=0; j<Source_Buffer_Width; j++)
+            {
+                EPD_IT8951_WriteData(*Source_Buffer);
+                Source_Buffer++;
+            }
+        }
+    }
+
+    EPD_IT8951_LoadImgEnd();
+}
+--
+        EPD_IT8951_WriteMuitiData(Source_Buffer, Source_Buffer_Length);
+    }
+    else
+    {
+        for(UDOUBLE i=0; i<Source_Buffer_Height; i++)
+        {
+            for(UDOUBLE j=0; j<Source_Buffer_Width; j++)
+            {
+                EPD_IT8951_WriteData(*Source_Buffer);
+                Source_Buffer++;
+            }
+        }
+    }
+
+    EPD_IT8951_LoadImgEnd();
+}
+--
+        EPD_IT8951_WriteMuitiData(Source_Buffer, Source_Buffer_Length);
+    }
+    else
+    {
+        for(UDOUBLE i=0; i<Source_Buffer_Height; i++)
+        {
+            for(UDOUBLE j=0; j<Source_Buffer_Width; j++)
+            {
+                EPD_IT8951_WriteData(*Source_Buffer);
+                Source_Buffer++;
+            }
+        }
+    }
+
+    EPD_IT8951_LoadImgEnd();
+}

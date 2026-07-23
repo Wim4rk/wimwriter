@@ -22,11 +22,8 @@ Waveshares "1-bpp"-funktion förväntar sig en uppackad buffert där 1 pixel = 1
 ### Påbörjat försök till lösning:
 Vi har skapat ett eget teckensnitt. Det omfattar Index 0x00 (' ') till 0x7F (' ').
 
-När vi nu går över till att använda ett eget 32x64-typsnitt, har vi ett par olika förslag på hur vi kan rendea det:
-* Alternativ 1 (Snabbast körning): Vi sparar typsnittet helt uppackat. En bokstav tar då cirka 2 KB i anspråk istället för 256 bytes. Det tar marginellt mer plats i den färdiga binären, men vi kan mata datan rakt in i kontrollern utan processorkraft.
-* Alternativ 2 (Minst minnesavtryck): Vi behåller idén om en 1-bpp-array (där 1 bit = 1 pixel) för att spara minne och underlätta framtida framebuffer-synkronisering. Sedan skriver vi ett förslag till en egen liten uppackningsfunktion i C som blixtsnabbt översätter bits till bytes i en tillfällig buffert precis innan SPI-överföringen sker.
-
-I enlighet med projektsprioriteringarna nedan så skall vi i första hand fokusera på så låg latens som möjligt.
+När vi nu går över till att använda ett eget 32x64-typsnitt, har vi ett förslag på hur vi kan rendera det:
+* Vi sparar typsnittet helt uppackat. En bokstav tar då cirka 2 KB i anspråk istället för 256 bytes. Det tar marginellt mer plats i den färdiga binären, men vi kan mata datan rakt in i kontrollern utan processorkraft.
 
 ---
 
