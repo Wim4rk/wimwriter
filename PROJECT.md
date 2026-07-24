@@ -1,35 +1,10 @@
 # Projekt wimwriter: en minimalistisk digital skrivmaskin
 
-## Prio 1: Det synbarligen oöverstigliga problemet som måste lösas
-
-Innan något annat kan göras måste vi kunna rendera text på skärmen. Vi behöver lösa **glyph-caching**.
-
-Det finns för närvarande en olöst teknisk utmaning gällande datatyp och format, där styrenhetens Packed Pixel-läge förväntar sig ett annat format än det bitmappsformat som de medföljande fonterna lagras i.
-
-### Resultat av felsökning:
-
-Det vi ser i Waveshares källkod är att deras implementation av 1-bpp (svartvitt) är ett fulhack som krockar med vår minneshantering.Här är de kritiska insikterna från din sökning i källkoden:
-
-IT8951_1BPP existerar inte: Din sökning efter detta macro returnerade helt tomt. Biblioteket förlitar sig uteslutande på 2BPP, 4BPP och 8BPP.
-
-**Den inofficiella lösningen:** Titta på bibliotekets egna kommentarer: //Use 8bpp to set 1bpp. När du anropar 1-bpp-funktionen ställer biblioteket i själva verket in hårdvaran på 8-bitars färgdjup (IT8951_8BPP).
-
-**Minnesmatematiken:** I funktionen castas din buffert till 16-bitars ord (UWORD*), och bredden beräknas som Area_Img_Info->Area_W/2. Om en ruta är 32 pixlar bred, skickar kontrollern alltså 16 UWORDs över SPI, vilket är exakt 32 bytes.
-
-### Kärnproblemet:
-Waveshares "1-bpp"-funktion förväntar sig en uppackad buffert där 1 pixel = 1 hel byte (exempelvis 0x00 för svart och 0xFF för vitt). Vår nuvarande cache packar 8 pixlar i en enda byte, vilket rimmar väl med strategin om en extremt lättdriven virtuell skärm i RAM. Men när vi skickar denna kompakta buffert till Waveshares drivrutin, tolkar den varje packad byte som en enda pixel och fortsätter sedan att läsa data långt utanför buffertens minnesområde.
-
-### Påbörjat försök till lösning:
-Vi har skapat ett eget teckensnitt. Det omfattar Index 0x00 (' ') till 0x7F (' ').
-
-När vi nu går över till att använda ett eget 32x64-typsnitt, har vi ett förslag på hur vi kan rendera det:
-* Vi sparar typsnittet helt uppackat. En bokstav tar då cirka 2 KB i anspråk istället för 256 bytes. Det tar marginellt mer plats i den färdiga binären, men vi kan mata datan rakt in i kontrollern utan processorkraft.
-
 ---
 
 ## Projektetspecifikationer
 
-### 1. Projektprioriteringar (Kärnfokus)
+### 1. Prioriteringar (Kärnfokus)
 
 För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
 
@@ -103,6 +78,12 @@ Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning
 * **Kompilering och drivrutiner:** Vi ska integrera Waveshares `Makefile`-logik och säkerställa att rätt flaggor (`-D BCM`) skickas till kompilatorn. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
 
 ---
+
+## Framtida modifikationer och förbättringar
+
+Det vore fördelaktigt för batteritiden att bygga ett integrerat tangentbord som inte kräver en separat USB-anslutning. Därför sparar vi på fysiska PINs på Raspberryn så gott vi kan.
+
+---
 *Projektet upprättad 2026-07-20.*
 
-*Senaste uppdateringen 2026-07-22*
+*Senaste uppdateringen 2026-07-24*
