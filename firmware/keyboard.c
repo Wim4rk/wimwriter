@@ -44,7 +44,7 @@ static const char map_shift[128] = {
 };
 
 int keyboard_init(const char *device_path) {
-    int fd = open(device_path, O_RDONLY | O_NONBLOCK);
+    int fd = open(device_path, O_RDONLY);
     if (fd == -1) {
         printf("Kunde inte öppna %s\n", device_path);
     }

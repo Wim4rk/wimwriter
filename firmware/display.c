@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "display.h"
-#include "wim_font_courier.h" // Uppdatera sökvägen till din nya font
+#include "wim_font_courier.h" 
 #include "DEV_Config.h"
 
 extern void EPD_IT8951_ReadBusy(void);
@@ -19,13 +19,9 @@ void init_display(UDOUBLE *target_addr) {
     EPD_IT8951_Clear_Refresh(Dev_Info, *target_addr, 0);
 }
 
+
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
     if (c < 0 || c > 127) return;
-
-    // 1. Räkna om koordinaterna för 180 graders rotation.
-    // Vi utgår från skärmens fasta paneldimensioner (1448x1072).
-    int rot_x = 1448 - GLYPH_W - x;
-    int rot_y = 1072 - GLYPH_H - y;
 
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
@@ -33,18 +29,13 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     load_info.Source_Buffer_Addr = (UBYTE*)wim_font_32x64[(int)c];
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
-
-    // 2. Ändra flaggan för hårdvarurotation (tidigare IT8951_ROTATE_0)
-    load_info.Rotate = IT8951_ROTATE_180;
-
+    load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
-    // 3. Ge kontrollern de nya, speglade koordinaterna
-    area_info.Area_X = rot_x;
-    area_info.Area_Y = rot_y;
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
     area_info.Area_W = GLYPH_W;
     area_info.Area_H = GLYPH_H;
-
 
     EPD_IT8951_WaitForDisplayReady();
     EPD_IT8951_SetTargetMemoryAddr(target_addr);
@@ -66,8 +57,10 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
 
+    // Kör A2-läge för maximal hastighet i enlighet med Prio 1
     EPD_IT8951_Display_Area(x, y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
 }
+
 
 void cleanup_display(void) {
      DEV_Module_Exit();

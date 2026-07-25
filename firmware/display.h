@@ -7,6 +7,7 @@
 #define GLYPH_H 64
 
 #define IT8951_A2_MODE 6
+#define IT8951_DU_MODE 2
 #define GLYPH_SIZE_BYTES 2048
 
 void init_display(UDOUBLE *target_addr);
