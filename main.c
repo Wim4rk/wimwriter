@@ -19,15 +19,6 @@ void clear_buffer() {
     }
 }
 
-// Helper function. Clear logic buffer
-void clear_buffer() {
-    for (int r = 0; r < MAX_ROWS; r++) {
-        for (int c = 0; c < MAX_COLS; c++) {
-            text_buffer[r][c] = ' ';
-        }
-    }
-}
-
 int main() {
     UDOUBLE target_addr;
 

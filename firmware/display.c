@@ -3,6 +3,7 @@
 #include "wim_font_courier.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
+#include "EPD_IT8951.h"
 
 extern void EPD_IT8951_ReadBusy(void);
 

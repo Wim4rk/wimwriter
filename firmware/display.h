@@ -14,7 +14,13 @@
 #define MAX_COLS 41
 #define MAX_ROWS 15
 
-// Parameter för hur rmånga rader som bevaras vid Jump
+#define GLYPH_W 32
+#define GLYPH_H 64
+#define GLYPH_SIZE_BYTES 2048
+
+#define IT8951_A2_MODE 6
+
+// Parameter för hur många rader som bevaras vid Jump
 #define JUMP_LINES 2
 
 void init_display(UDOUBLE *target_addr);
