@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "display.h"
-#include "../fonts/wim_font_courier.h" // Uppdatera sökvägen till din nya font
-#include "../lib/Config/DEV_Config.h"
+#include "wim_font_courier.h" // Uppdatera sökvägen till din nya font
+#include "DEV_Config.h"
 
 extern void EPD_IT8951_ReadBusy(void);
 

@@ -38,7 +38,7 @@ int main() {
             char c = map_keycode_to_char(ev.code);
 
             if (c != -1) {
-                render_fast_char(c, cursor_x, cursor_y, target_addr);
+                render_char(c, cursor_x, cursor_y, target_addr);
                 cursor_x += GLYPH_W;
 
                 // Grundläggande radbrytning (vi fixar detta mer senare i software/editor.c)

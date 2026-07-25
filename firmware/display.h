@@ -10,7 +10,7 @@
 #define GLYPH_SIZE_BYTES 2048
 
 void init_display(UDOUBLE *target_addr);
-void render_fast_char(char c, int x, int y, UDOUBLE target_addr);
+void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
 
 #endif
