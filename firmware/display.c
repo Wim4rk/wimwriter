@@ -72,3 +72,43 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 void cleanup_display(void) {
      DEV_Module_Exit();
 }
+
+int get_physical_x(int col) {
+    return SCREEN_WIDTH - MARGIN_RIGHT - ((col + 1) * GLYPH_W);
+}
+
+int get_physical_y(int row) {
+    return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
+}
+
+void redraw_buffer(char (buffer)[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            // Vi skickar ALLA tecken, även mellanslag, för att "sudda" den gamla texten
+            render_char(buffer[row][col], get_physical_x(col), get_physical_y(row), target_addr);
+        }
+    }
+}
+
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // 1. Flytta upp de 5 nedersta raderana till de 5 översta
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            buffer[row][col] = buffer[MAX_ROWS - JUMP_LINES + row][col];
+        }
+    }
+
+    // 2. tÖM RESTEN AV BUFFERTEN (RAD 6 - 15)
+    for (int row = JUMP_LINES; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            buffer[row][col] = ' ';
+        }
+    }
+
+    // 3. Flytta markören till rad 6[cite: 1, 2]
+    *cursor_row = JUMP_LINES;
+    *cursor_col = 0;
+
+    // 4. Rita om hela skärytan i A2-läge[cite: 1]
+    redraw_buffer(buffer, target_addr);
+}

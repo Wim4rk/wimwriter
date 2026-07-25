@@ -1,17 +1,30 @@
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
-#include "../lib/e-Paper/EPD_IT8951.h"
+#include "../lib/Config/DEV_Config.h"
 
-#define GLYPH_W 32
-#define GLYPH_H 64
+// Dimensioner och marginaler
+#define SCREEN_WIDTH 1448
+#define SCREEN_HEIGHT 1072
+#define MARGIN_LEFT 68
+#define MARGIN_RIGHT 68
+#define MARGIN_TOP 44
+#define MARGIN_BOTTOM 68
 
-#define IT8951_A2_MODE 6
-#define IT8951_DU_MODE 2
-#define GLYPH_SIZE_BYTES 2048
+#define MAX_COLS 41
+#define MAX_ROWS 15
+
+// Parameter för hur rmånga rader som bevaras vid Jump
+#define JUMP_LINES 2
 
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
+
+// Nya hjälpfunktioner för buffert och Jump
+int get_physical_x(int col);
+int get_physical_y(int row);
+void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
 #endif
