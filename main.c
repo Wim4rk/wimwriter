@@ -24,12 +24,12 @@ char text_buffer[MAX_ROWS][MAX_COLS];
 
 // Helper function. Calculate physical X-coord on screen
 int get_physical_x(int col){
-    return MARGIN_LEFT + (col * GLYPH_W);
+    return SCREEN_WIDTH - MARGIN_RIGHT - ((col + 1) * GLYPH_W);
 }
 
 // Helper function. Calculate physical Y-coord on screen
 int get_physical_y(int row) {
-    return MARGIN_TOP + (row * GLYPH_H);
+    return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
 }
 
 // Helper function. Clear logic buffer
