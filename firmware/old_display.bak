@@ -2,7 +2,6 @@
 #include "display.h"
 #include "wim_font_courier.h"
 #include "DEV_Config.h"
-#include "fast_spi.h"
 
 extern void EPD_IT8951_ReadBusy(void);
 
@@ -44,7 +43,7 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     area_info.Area_W = GLYPH_W;
     area_info.Area_H = GLYPH_H;
 
-    // EPD_IT8951_WaitForDisplayReady(); // Blockerar inputtråden
+    EPD_IT8951_WaitForDisplayReady();
     EPD_IT8951_SetTargetMemoryAddr(target_addr);
     EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
 
@@ -56,11 +55,9 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     DEV_SPI_WriteByte(write_preamble);
     EPD_IT8951_ReadBusy();
 
-    // Denna loop är för långsam
-    // for(uint32_t i = 0; i < GLYPH_SIZE_BYTES; i++) {
-    //     DEV_SPI_WriteByte(flipped_glyph[i]);
-    // }
-    fast_spi_write_nbyte(flipped_glyph, GLYPH_SIZE_BYTES);
+    for(uint32_t i = 0; i < GLYPH_SIZE_BYTES; i++) {
+        DEV_SPI_WriteByte(flipped_glyph[i]);
+    }
 
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();

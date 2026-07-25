@@ -36,6 +36,7 @@ INCLUDES = -I./firmware \
 # Alla C-källkodsfiler
 SRCS = main.c \
        firmware/display.c \
+       firmware/fast_spi.c \
        firmware/keyboard.c \
        lib/Config/DEV_Config.c \
        lib/e-Paper/EPD_IT8951.c \

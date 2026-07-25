@@ -1,5 +1,5 @@
-#ifndef SWEDISH_FONT_32X64_H
-#define SWEDISH_FONT_32X64_H
+#ifndef WIM_FONT_32X64_H
+#define WIM_FONT_32X64_H
 
 #include <stdint.h>
 
@@ -22278,4 +22278,4 @@ const uint8_t wim_font_32x64[128][2048] = {
     },
 };
 
-#endif // SWEDISH_FONT_32X64_H
+#endif // WIM_FONT_32X64_H
