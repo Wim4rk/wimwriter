@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "display.h"
 #include "wim_font_courier.h"
 #include "DEV_Config.h"
@@ -156,4 +157,53 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 
     // 4. Rita om hela skärmytan i A2-läge
     redraw_buffer(buffer, target_addr);
+}
+
+void word_wrap(int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // Om vi inte har nått kanten behöver vi inte göra något
+    if (*cursor_col < MAX_COLS) return;
+
+    // Kolla om tecknet vi står på eller just skrev är ett mellanslag
+    // Om det är ett mellanslag kan vi bara bryta raden direkt
+    if (text_buffer[*cursor_row][MAX_COLS - 1] == ' ') {
+        *cursor_col = 0;
+        (*cursor_row)++;
+        return;
+    }
+
+    // Annars letar vi bakåt efter det senaste mellanslaget på raden för att flytta hela ordet
+    int break_col = MAX_COLS - 1;
+    while (break_col > 0 && text_buffer[*cursor_row][break_col] != ' ') {
+        break_col--;
+    }
+
+    // Om inget mellanslag hittades alls på raden (ett mycket långt ord)
+    // tvingas vi kapa ordet vid maxgränsen.
+    if (break_col == 0) {
+        *cursor_col = 0;
+        (*cursor_row)++;
+        return;
+    }
+
+    // Flytta alla tecken från mellanslaget och framåt till nästa rad
+    int chars_to_move = MAX_COLS - (break_col + 1);
+    char temp_word[chars_to_move];
+
+    for (int i = 0; i < chars_to_move; i++) {
+        temp_word[i] = text_buffer[*cursor_row][break_col + 1 + i];
+        text_buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
+    }
+
+    // Gå till nästa rad
+    (*cursor_row)++;
+    *cursor_col = 0;
+
+    // Skriv in det flyttade ordet på början av nya raden
+    for (int i = 0; i < chars_to_move; i++) {
+        text_buffer[*cursor_row][*cursor_col] = temp_word[i];
+        (*cursor_col)++;
+    }
+
+    // Rita om de berörda raderna på skärmen via vår buffertfunktion
+    redraw_buffer(text_buffer, target_addr);
 }

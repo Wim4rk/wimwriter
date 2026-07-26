@@ -33,6 +33,7 @@ void cleanup_display(void);
 int get_physical_x(int col);
 int get_physical_y(int row);
 void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
+void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
 #endif

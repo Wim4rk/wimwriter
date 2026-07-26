@@ -51,12 +51,13 @@ int main() {
                 // Hämta tecken från tabell
                 char c = keyboard_get_char(&ev);
 
+                switch (c) {
+                    case '\n': // Enter
+                        cursor_col = 0;
+                        cursor_row++;
+                        break;
 
-                if (c == '\n') { //Enter
-                    cursor_col = 0;
-                    cursor_row++;
-                }
-                else if (c == 127) { // Backspace
+                    case 127: // Backspace
                     cursor_col--;
                         if (cursor_col < 0) {
                             if (cursor_row > 0) {
@@ -69,22 +70,26 @@ int main() {
                         // Overwrite buffer and screen with ' '
                         text_buffer[cursor_row][cursor_col] = ' ';
                         render_char(' ', get_physical_x(cursor_col), get_physical_y(cursor_row), target_addr);
+                        break;
+
+                    default:
+                        if (c > 0) { // Regular chars
+                            int px = get_physical_x(cursor_col);
+                            int py = get_physical_y(cursor_row);
+
+                            text_buffer[cursor_row][cursor_col] = c;
+                            render_char(c, px, py, target_addr);
+
+                            cursor_col++;
+
+                            // Word wrapping
+                            if (cursor_col >= MAX_COLS) {
+                                word_wrap(text_buffer, &cursor_row, &cursor_col, target_addr);
+                            }
+                        }
+                        break;
                 }
-                else if (c > 0) { // Regular chars
-                    int px = get_physical_x(cursor_col);
-                    int py = get_physical_y(cursor_row);
 
-                    text_buffer[cursor_row][cursor_col] = c;
-                    render_char(c, px, py, target_addr);
-
-                    cursor_col++;
-
-                    // Word wrapping
-                    if (cursor_col >= MAX_COLS) {
-                        cursor_col = 0;
-                        cursor_row++;
-                    }
-                }
 
                 // Jump mechanism
                 if (cursor_row >= MAX_ROWS) {
