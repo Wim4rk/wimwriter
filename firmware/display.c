@@ -150,7 +150,7 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
     redraw_buffer(buffer, target_addr);
 }
 
-void word_wrap(char *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     // Om vi inte har nått kanten behöver vi inte göra något
     if (*cursor_col < MAX_COLS) return;
 
