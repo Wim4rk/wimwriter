@@ -114,6 +114,15 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     EPD_IT8951_Display_Area(x, y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
 }
 
+void init_display(UDOUBLE *target_addr) {
+    // 1. Initiera hårdvara och SPI
+    if (DEV_Module_Init() != 0) {
+        return;
+    }
+
+    // 2. Initiera EPD IT8951 (exempel med VCOM -2.14V / 2140)
+    *target_addr = EPD_IT8951_Init(2140);
+}
 
 void cleanup_display(void) {
      DEV_Module_Exit();
