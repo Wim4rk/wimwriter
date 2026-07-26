@@ -1,0 +1,62 @@
+void clear_area(int x, int y, int w, int h, UDOUBLE target_addr, UWORD mode) {
+    // Säkerställ att vi inte försöker radera utanför skärmens gränser
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
+    if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    // Vi skapar en enda rad med vita pixlar för att spara minne, och återanvänder den.
+    static UBYTE white_row[SCREEN_WIDTH];
+    static bool initialized = false;
+    if (!initialized) {
+        for (int i = 0; i < SCREEN_WIDTH; i++) {
+            white_row[i] = 0xFF; // 0xFF är vitt på e-bläck (8bpp)
+        }
+        initialized = true;
+    }
+
+    load_info.Source_Buffer_Addr = (UBYTE*)white_row;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = w;
+    area_info.Area_H = h;
+
+    EPD_IT8951_WaitForDisplayReady();
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Loopa över höjden och tryck in vår vita rad via blocköverföring
+    for (int i = 0; i < h; i++) {
+        fast_spi_write_nbyte(white_row, w);
+    }
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Uppdatera skärmytan asynkront med angivet läge (t.ex. IT8951_A2_MODE)
+    EPD_IT8951_Display_Area(x, y, w, h, mode);
+}
+
+// Beräkna ytan från rad 3 till botten
+int start_y = get_physical_y(JUMP_LINES - 1) + GLYPH_H;
+int clear_height = SCREEN_HEIGHT - MARGIN_BOTTOM - start_y;
+int clear_width = (MAX_COLS * GLYPH_W);
+int start_x = get_physical_x(0);
+
+clear_area(start_x, start_y, clear_width, clear_height, target_addr, IT8951_A2_MODE)
