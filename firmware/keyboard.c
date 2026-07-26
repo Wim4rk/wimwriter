@@ -55,6 +55,11 @@ void keyboard_close(int fd) {
     if (fd != -1) close(fd);
 }
 
+// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 2]
+bool keyboard_is_shift_pressed(void) {
+    return shift_pressed;
+}
+
 char keyboard_get_char(struct input_event *ev) {
     // Uppdatera modifiers oavsett om det är ned- eller uppsläpp
     if (ev->code == KEY_LEFTSHIFT || ev->code == KEY_RIGHTSHIFT) {
@@ -69,12 +74,18 @@ char keyboard_get_char(struct input_event *ev) {
     // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)
     if (ev->value == 1 || ev->value == 2) {
         if (ev->code < 128) {
-            bool use_shift = shift_pressed ^ caps_locked; // XOR för korrekt Caps-beteende
+            char default_char = map_default[ev->code];
+
+            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
+            bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
+                                default_char == '{' || default_char == '}' || default_char == '|';
+
+            bool use_shift = shift_pressed;
 
             if (use_shift) {
                 return map_shift[ev->code];
             } else {
-                return map_default[ev->code];
+                return default_char;
             }
         }
     }

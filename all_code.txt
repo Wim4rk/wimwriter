@@ -1,0 +1,476 @@
+========== BÖRJAN PÅ: ./software/file_io.h ==========
+
+========== SLUT PÅ: ./software/file_io.h ==========
+
+========== BÖRJAN PÅ: ./software/sync.c ==========
+
+========== SLUT PÅ: ./software/sync.c ==========
+
+========== BÖRJAN PÅ: ./software/editor.h ==========
+
+========== SLUT PÅ: ./software/editor.h ==========
+
+========== BÖRJAN PÅ: ./software/file_io.c ==========
+
+========== SLUT PÅ: ./software/file_io.c ==========
+
+========== BÖRJAN PÅ: ./software/editor.c ==========
+
+========== SLUT PÅ: ./software/editor.c ==========
+
+========== BÖRJAN PÅ: ./software/sync.h ==========
+
+========== SLUT PÅ: ./software/sync.h ==========
+
+========== BÖRJAN PÅ: ./firmware/keyboard.h ==========
+#ifndef KEYBOARD_H
+#define KEYBOARD_H
+
+#include <linux/input.h>
+#include <stdbool.h>
+
+// Initiera och stäng tangentbordet
+int keyboard_init(const char *device_path);
+void keyboard_close(int fd);
+
+// Tolka eventet och returnera tecknet (returnerar 0 om ogiltigt/osynligt)
+char keyboard_get_char(struct input_event *ev);
+
+#endif
+
+========== SLUT PÅ: ./firmware/keyboard.h ==========
+
+========== BÖRJAN PÅ: ./firmware/display.h ==========
+#ifndef DISPLAY_H
+#define DISPLAY_H
+
+#include "../lib/Config/DEV_Config.h"
+
+// Dimensioner och marginaler
+#define SCREEN_WIDTH 1448
+#define SCREEN_HEIGHT 1072
+#define MARGIN_LEFT 68
+#define MARGIN_RIGHT 68
+#define MARGIN_TOP 44
+#define MARGIN_BOTTOM 68
+
+#define MAX_COLS 41
+#define MAX_ROWS 15
+
+#define GLYPH_W 32
+#define GLYPH_H 64
+#define GLYPH_SIZE_BYTES 2048
+
+#define IT8951_A2_MODE 6
+
+// Parameter för hur många rader som bevaras vid Jump
+#define JUMP_LINES 2
+
+#define FULL_SCREEN_BUFFER_SIZE ((SCREEN_WIDTH * SCREEN_HEIGHT) / 8)
+
+void init_display(UDOUBLE *target_addr);
+void render_char(char c, int x, int y, UDOUBLE target_addr);
+void cleanup_display(void);
+
+// Nya hjälpfunktioner för buffert och Jump
+int get_physical_x(int col);
+int get_physical_y(int row);
+void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
+
+#endif
+
+========== SLUT PÅ: ./firmware/display.h ==========
+
+========== BÖRJAN PÅ: ./firmware/display.c ==========
+#include <stdio.h>
+#include "display.h"
+#include "wim_font_courier.h"
+#include "DEV_Config.h"
+#include "fast_spi.h"
+#include "EPD_IT8951.h"
+
+extern void EPD_IT8951_ReadBusy(void);
+
+// Cache för färdigvända tecken - spara beräkning under skrivning
+static UBYTE pre_flipped_glyphs[128][GLYPH_SIZE_BYTES];
+
+void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+    // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
+    // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
+    static UBYTE screen_frame_buffer[SCREEN_WIDTH * SCREEN_HEIGHT]; // Anpassa storlek efter pixelformat (t.ex. 8bpp)
+
+    // Fyll bufferten med vit bakgrund (eller nollor beroende på initiering)
+    // Här utgår vi från att 0xFF är vit/bakgrund
+    memset(screen_frame_buffer, 0xFF, sizeof(screen_frame_buffer));
+
+    // 2. Bygg ihop skärmbilden lokalt i RAM via snabba memcpy
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            char c = buffer[row][col];
+            if (c < 0 || c > 127) c = ' ';
+
+            const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+
+            int px = get_physical_x(col);
+            int py = get_physical_y(row);
+
+            // Kopiera rad för rad av glyphen till rätt position i den stora ram-bufferten
+            for (int h = 0; h < GLYPH_H; h++) {
+                // Beräkna destination i den stora skärmbufferten
+                int dest_offset = (py + h) * SCREEN_WIDTH + px;
+                // Kopiera 32 pixlar (bytes) för denna rad av tecknet
+                memcpy(&screen_frame_buffer[dest_offset], &glyph[h * GLYPH_W], GLYPH_W);
+            }
+        }
+    }
+
+    // 3. Skicka hela den sammansatta bilden till IT8951 i ett enda block
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = screen_frame_buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = 0;
+    area_info.Area_Y = 0;
+    area_info.Area_W = SCREEN_WIDTH;
+    area_info.Area_H = SCREEN_HEIGHT;
+
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Skicka hela skärmblocket på en gång
+    fast_spi_write_nbyte(screen_frame_buffer, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // 4. Trigga uppdatering av hela skärmen i A2-läge
+    EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
+}
+
+void render_char(char c, int x, int y, UDOUBLE target_addr) {
+    if (c < 0 || c > 127) return;
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = (UBYTE*)pre_flipped_glyphs[(int)c];
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = GLYPH_W;
+    area_info.Area_H = GLYPH_H;
+
+    // EPD_IT8951_WaitForDisplayReady(); // Blockerar inputtråden
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    fast_spi_write_nbyte(pre_flipped_glyphs[(int)c], GLYPH_SIZE_BYTES);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    EPD_IT8951_Display_Area(x, y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
+}
+
+
+void cleanup_display(void) {
+     DEV_Module_Exit();
+}
+
+int get_physical_x(int col) {
+    return SCREEN_WIDTH - MARGIN_RIGHT - ((col + 1) * GLYPH_W);
+}
+
+int get_physical_y(int row) {
+    return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
+}
+
+void redraw_buffer(char (buffer)[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            // Vi skickar ALLA tecken, även mellanslag, för att "sudda" den gamla texten
+            render_char(buffer[row][col], get_physical_x(col), get_physical_y(row), target_addr);
+        }
+    }
+}
+
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // 1. Flytta upp de 5 nedersta raderana till de 5 översta
+    for (int row = 0; row < JUMP_LINES; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            buffer[row][col] = buffer[MAX_ROWS - JUMP_LINES + row][col];
+        }
+    }
+
+    // 2. tÖM RESTEN AV BUFFERTEN (RAD 6 - 15)
+    for (int row = JUMP_LINES; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            buffer[row][col] = ' ';
+        }
+    }
+
+    // 3. Flytta markören till startläge.
+    *cursor_row = JUMP_LINES;
+    *cursor_col = 0;
+
+    // 4. Rita om hela skärmytan i A2-läge
+    redraw_buffer(buffer, target_addr);
+}
+
+========== SLUT PÅ: ./firmware/display.c ==========
+
+========== BÖRJAN PÅ: ./firmware/fast_spi.c ==========
+#include "fast_spi.h"
+
+#ifdef BCM
+#include <bcm2835.h>
+#endif
+
+void fast_spi_write_nbyte(UBYTE *pData, UDOUBLE len) {
+#ifdef BCM
+    bcm2835_spi_writenb((char *)pData, len);
+#endif
+}
+
+========== SLUT PÅ: ./firmware/fast_spi.c ==========
+
+========== BÖRJAN PÅ: ./firmware/fast_spi.h ==========
+#ifndef FAST_SPI_H
+#define FAST_SPI_H
+
+#include "DEV_Config.h"
+
+// Funtion för blocköverföring via SPI
+void fast_spi_write_nbyte(UBYTE *pData, UDOUBLE len);
+
+#endif
+
+========== SLUT PÅ: ./firmware/fast_spi.h ==========
+
+========== BÖRJAN PÅ: ./firmware/keyboard.c ==========
+#include "keyboard.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+
+// Håll koll på modifier-tangenter
+static bool shift_pressed = false;
+static bool caps_locked = false;
+
+// Mappning för standardtangenter (Svensk fysisk layout -> 7-bit ASCII)
+// Observera: 'å' = '}', 'ä' = '{', 'ö' = '|' i din 7-bitars standard
+static const char map_default[128] = {
+    [KEY_A] = 'a', [KEY_B] = 'b', [KEY_C] = 'c', [KEY_D] = 'd', [KEY_E] = 'e',
+    [KEY_F] = 'f', [KEY_G] = 'g', [KEY_H] = 'h', [KEY_I] = 'i', [KEY_J] = 'j',
+    [KEY_K] = 'k', [KEY_L] = 'l', [KEY_M] = 'm', [KEY_N] = 'n', [KEY_O] = 'o',
+    [KEY_P] = 'p', [KEY_Q] = 'q', [KEY_R] = 'r', [KEY_S] = 's', [KEY_T] = 't',
+    [KEY_U] = 'u', [KEY_V] = 'v', [KEY_W] = 'w', [KEY_X] = 'x', [KEY_Y] = 'y',
+    [KEY_Z] = 'z',
+    [KEY_1] = '1', [KEY_2] = '2', [KEY_3] = '3', [KEY_4] = '4', [KEY_5] = '5',
+    [KEY_6] = '6', [KEY_7] = '7', [KEY_8] = '8', [KEY_9] = '9', [KEY_0] = '0',
+    [KEY_SPACE] = ' ', [KEY_ENTER] = '\n', [KEY_BACKSPACE] = 127, // 127 är Delete
+    [KEY_LEFTBRACE] = '}',  // å
+    [KEY_APOSTROPHE] = '{', // ä
+    [KEY_SEMICOLON] = '|',  // ö
+    [KEY_MINUS] = '+', [KEY_SLASH] = '-', [KEY_COMMA] = ',', [KEY_DOT] = '.'
+};
+
+// Mappning för Shift/Caps Lock (Svensk fysisk layout -> 7-bit ASCII)
+// 'Å' = ']', 'Ä' = '[', 'Ö' = '\'
+static const char map_shift[128] = {
+    [KEY_A] = 'A', [KEY_B] = 'B', [KEY_C] = 'C', [KEY_D] = 'D', [KEY_E] = 'E',
+    [KEY_F] = 'F', [KEY_G] = 'G', [KEY_H] = 'H', [KEY_I] = 'I', [KEY_J] = 'J',
+    [KEY_K] = 'K', [KEY_L] = 'L', [KEY_M] = 'M', [KEY_N] = 'N', [KEY_O] = 'O',
+    [KEY_P] = 'P', [KEY_Q] = 'Q', [KEY_R] = 'R', [KEY_S] = 'S', [KEY_T] = 'T',
+    [KEY_U] = 'U', [KEY_V] = 'V', [KEY_W] = 'W', [KEY_X] = 'X', [KEY_Y] = 'Y',
+    [KEY_Z] = 'Z',
+    [KEY_1] = '!', [KEY_2] = '"', [KEY_3] = '#', [KEY_4] = '$', [KEY_5] = '%',
+    [KEY_6] = '&', [KEY_7] = '/', [KEY_8] = '(', [KEY_9] = ')', [KEY_0] = '=',
+    [KEY_SPACE] = ' ', [KEY_ENTER] = '\n', [KEY_BACKSPACE] = 127,
+    [KEY_LEFTBRACE] = ']',  // Å
+    [KEY_APOSTROPHE] = '[', // Ä
+    [KEY_SEMICOLON] = '\\', // Ö
+    [KEY_MINUS] = '?', [KEY_SLASH] = '_', [KEY_COMMA] = ';', [KEY_DOT] = ':'
+};
+
+int keyboard_init(const char *device_path) {
+    int fd = open(device_path, O_RDONLY);
+    if (fd == -1) {
+        printf("Kunde inte öppna %s\n", device_path);
+    }
+    return fd;
+}
+
+void keyboard_close(int fd) {
+    if (fd != -1) close(fd);
+}
+
+// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 2]
+bool keyboard_is_shift_pressed(void) {
+    return shift_pressed;
+}
+
+char keyboard_get_char(struct input_event *ev) {
+    // Uppdatera modifiers oavsett om det är ned- eller uppsläpp
+    if (ev->code == KEY_LEFTSHIFT || ev->code == KEY_RIGHTSHIFT) {
+        shift_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+    if (ev->code == KEY_CAPSLOCK && ev->value == 1) {
+        caps_locked = !caps_locked;
+        return 0;
+    }
+
+    // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)
+    if (ev->value == 1 || ev->value == 2) {
+        if (ev->code < 128) {
+            char default_char = map_default[ev->code];
+
+            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
+            bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
+                                default_char == '{' || default_char == '}' || default_char == '|';
+
+            bool use_shift = shift_pressed;
+
+            if (use_shift) {
+                return map_shift[ev->code];
+            } else {
+                return default_char;
+            }
+        }
+    }
+    return 0;
+}
+
+========== SLUT PÅ: ./firmware/keyboard.c ==========
+
+========== BÖRJAN PÅ: ./main.c ==========
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include <linux/input.h>
+#include "firmware/display.h"
+#include "keyboard.h"
+
+#define KEYBOARD_DEVICE "/dev/input/event0"
+
+char text_buffer[MAX_ROWS][MAX_COLS];
+
+// Helper function. Clear logic buffer
+void clear_buffer() {
+    for (int r = 0; r < MAX_ROWS; r++) {
+        for (int c = 0; c < MAX_COLS; c++) {
+            text_buffer[r][c] = ' ';
+        }
+    }
+}
+
+int main() {
+    UDOUBLE target_addr;
+
+    printf("Initierar IT8951-display via SPI...\n");
+    init_display(&target_addr);
+
+    printf("Kopplar upp tangentbord\n");
+    int kb_fd = keyboard_init(KEYBOARD_DEVICE);
+    if (kb_fd < 0) {
+        printf("Kunde inte öppna tangentbordet (sudo?).\n");
+        cleanup_display();
+        return 1;
+    }
+
+    clear_buffer();
+
+    // Startkoordinater
+    int cursor_col = 0;
+    int cursor_row = 5;
+
+    printf("WimWriter redo.\n");
+
+    struct input_event ev;
+
+    // Main loop - CPU rests in read() until interrupt from keyboard
+    while (1) {
+        if (read(kb_fd, &ev, sizeof(ev)) > 0) {
+            if (ev.type == EV_KEY) {
+
+                // Hämta tecken från tabell
+                char c = keyboard_get_char(&ev);
+
+
+                if (c == '\n') { //Enter
+                    cursor_col = 0;
+                    cursor_row++;
+                }
+                else if (c == 127) { // Backspace
+                    cursor_col--;
+                        if (cursor_col < 0) {
+                            if (cursor_row > 0) {
+                                cursor_row--;
+                                cursor_col = MAX_COLS - 1;
+                            } else {
+                                cursor_col = 0;
+                            }
+                        }
+                        // Overwrite buffer and screen with ' '
+                        text_buffer[cursor_row][cursor_col] = ' ';
+                        render_char(' ', get_physical_x(cursor_col), get_physical_y(cursor_row), target_addr);
+                }
+                else if (c > 0) { // Regular chars
+                    int px = get_physical_x(cursor_col);
+                    int py = get_physical_y(cursor_row);
+
+                    text_buffer[cursor_row][cursor_col] = c;
+                    render_char(c, px, py, target_addr);
+
+                    cursor_col++;
+
+                    // Word wrapping
+                    if (cursor_col >= MAX_COLS) {
+                        cursor_col = 0;
+                        cursor_row++;
+                    }
+                }
+
+                // Jump mechanism
+                if (cursor_row >= MAX_ROWS) {
+                    display_jump(text_buffer, &cursor_row, &cursor_col, target_addr);
+                }
+            }
+        }
+    }
+
+    keyboard_close(kb_fd);
+    cleanup_display();
+    return 0;
+}
+
+========== SLUT PÅ: ./main.c ==========
+

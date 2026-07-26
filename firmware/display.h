@@ -23,6 +23,8 @@
 // Parameter för hur många rader som bevaras vid Jump
 #define JUMP_LINES 2
 
+#define FULL_SCREEN_BUFFER_SIZE ((SCREEN_WIDTH * SCREEN_HEIGHT) / 8)
+
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
