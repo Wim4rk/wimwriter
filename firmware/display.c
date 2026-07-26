@@ -156,7 +156,7 @@ void word_wrap(int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
 
     // Kolla om tecknet vi står på eller just skrev är ett mellanslag
     // Om det är ett mellanslag kan vi bara bryta raden direkt
-    if (text_buffer[*cursor_row][MAX_COLS - 1] == ' ') {
+    if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
         *cursor_col = 0;
         (*cursor_row)++;
         return;
@@ -164,7 +164,7 @@ void word_wrap(int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
 
     // Annars letar vi bakåt efter det senaste mellanslaget på raden för att flytta hela ordet
     int break_col = MAX_COLS - 1;
-    while (break_col > 0 && text_buffer[*cursor_row][break_col] != ' ') {
+    while (break_col > 0 && buffer[*cursor_row][break_col] != ' ') {
         break_col--;
     }
 
@@ -181,8 +181,8 @@ void word_wrap(int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     char temp_word[chars_to_move];
 
     for (int i = 0; i < chars_to_move; i++) {
-        temp_word[i] = text_buffer[*cursor_row][break_col + 1 + i];
-        text_buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
+        temp_word[i] = buffer[*cursor_row][break_col + 1 + i];
+        buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
     }
 
     // Gå till nästa rad
@@ -191,10 +191,10 @@ void word_wrap(int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
 
     // Skriv in det flyttade ordet på början av nya raden
     for (int i = 0; i < chars_to_move; i++) {
-        text_buffer[*cursor_row][*cursor_col] = temp_word[i];
+        buffer[*cursor_row][*cursor_col] = temp_word[i];
         (*cursor_col)++;
     }
 
     // Rita om de berörda raderna på skärmen via vår buffertfunktion
-    redraw_buffer(text_buffer, target_addr);
+    redraw_buffer(buffer, target_addr);
 }
