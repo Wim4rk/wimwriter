@@ -115,13 +115,11 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 }
 
 void init_display(UDOUBLE *target_addr) {
-    // 1. Initiera hårdvara och SPI
     if (DEV_Module_Init() != 0) {
         return;
     }
-
-    // 2. Initiera EPD IT8951 (exempel med VCOM -2.14V / 2140)
-    *target_addr = EPD_IT8951_Init(2140);
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140);
+    *target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
 }
 
 void cleanup_display(void) {
@@ -137,73 +135,136 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Flytta upp de 5 nedersta raderana till de 5 översta
-    for (int row = 0; row < JUMP_LINES; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            buffer[row][col] = buffer[MAX_ROWS - JUMP_LINES + row][col];
-        }
-    }
+    // 1. Minneshantering på Raspberry Pi
+    size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
+    memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
 
-    // 2. tÖM RESTEN AV BUFFERTEN (RAD 6 - 15)
-    for (int row = JUMP_LINES; row < MAX_ROWS; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            buffer[row][col] = ' ';
-        }
-    }
+    size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
+    memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
 
-    // 3. Flytta markören till startläge.
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // 4. Rita om hela skärmytan i A2-läge
-    redraw_buffer(buffer, target_addr);
+    // 2. Skärmuppdatering: Radera hela ytan under JUMP_LINES i ett svep
+    int clear_start_y = get_physical_y(MAX_ROWS - 1); // Bottenradens Y
+    int clear_height = (MAX_ROWS - JUMP_LINES) * GLYPH_H;
+    int clear_width = MAX_COLS * GLYPH_W;
+    int clear_start_x = get_physical_x(MAX_COLS - 1); // Vänstermarginalen (index är omvänt)
+
+    clear_area(clear_start_x, clear_start_y, clear_width, clear_height, target_addr);
+
+    // 3. Rita enbart ut kontextraderna
+    for (int row = 0; row < JUMP_LINES; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            if (buffer[row][col] != ' ') {
+                int px = get_physical_x(col);
+                int py = get_physical_y(row);
+                render_char(buffer[row][col], px, py, target_addr);
+            }
+        }
+    }
 }
 
+v#include <string.h>
+
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // Om vi inte har nått kanten behöver vi inte göra något
     if (*cursor_col < MAX_COLS) return;
 
-    // Kolla om tecknet vi står på eller just skrev är ett mellanslag
-    // Om det är ett mellanslag kan vi bara bryta raden direkt
     if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
         *cursor_col = 0;
         (*cursor_row)++;
         return;
     }
 
-    // Annars letar vi bakåt efter det senaste mellanslaget på raden för att flytta hela ordet
     int break_col = MAX_COLS - 1;
     while (break_col > 0 && buffer[*cursor_row][break_col] != ' ') {
         break_col--;
     }
 
-    // Om inget mellanslag hittades alls på raden (ett mycket långt ord)
-    // tvingas vi kapa ordet vid maxgränsen.
     if (break_col == 0) {
         *cursor_col = 0;
         (*cursor_row)++;
         return;
     }
 
-    // Flytta alla tecken från mellanslaget och framåt till nästa rad
     int chars_to_move = MAX_COLS - (break_col + 1);
     char temp_word[chars_to_move];
 
-    for (int i = 0; i < chars_to_move; i++) {
-        temp_word[i] = buffer[*cursor_row][break_col + 1 + i];
-        buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
-    }
+    // 1. Minneshantering i RAM
+    memcpy(temp_word, &buffer[*cursor_row][break_col + 1], chars_to_move);
+    memset(&buffer[*cursor_row][break_col + 1], ' ', chars_to_move);
 
-    // Gå till nästa rad
+    // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
+    // Eftersom get_physical_x returnerar ett lägre värde ju högre kolumnindex är,
+    // utgör tecknet längst till höger (MAX_COLS - 1) raderingsytans startpunkt på X-axeln.
+    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_y = get_physical_y(*cursor_row);
+    int clear_width = chars_to_move * GLYPH_W;
+
+    clear_area(clear_x, clear_y, clear_width, GLYPH_H, target_addr);
+
+    // 3. Förbered ny rad
     (*cursor_row)++;
     *cursor_col = 0;
+    memcpy(&buffer[*cursor_row][0], temp_word, chars_to_move);
 
-    // Skriv in det flyttade ordet på början av nya raden
+    // 4. Skärmoperation: Rita ut ordet på den nya raden
     for (int i = 0; i < chars_to_move; i++) {
-        buffer[*cursor_row][*cursor_col] = temp_word[i];
-        (*cursor_col)++;
+        int px = get_physical_x(i);
+        int py = get_physical_y(*cursor_row);
+        render_char(temp_word[i], px, py, target_addr);
     }
 
-    // Rita om de berörda raderna på skärmen via vår buffertfunktion
-    redraw_buffer(buffer, target_addr);
+    *cursor_col = chars_to_move;
+}
+
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
+    if (width <= 0 || height <= 0) return;
+
+    int size = width * height;
+
+    // Statisk buffert för att undvika malloc i skrivloopen.
+    // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
+    static UBYTE white_buffer[92672];
+    static bool buffer_initialized = false;
+
+    if (!buffer_initialized) {
+        memset(white_buffer, 0xFF, sizeof(white_buffer)); // 0xFF är vitt i 8bpp
+        buffer_initialized = true;
+    }
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = white_buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = width;
+    area_info.Area_H = height;
+
+    // Skicka "damage box" till IT8951
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Blocköverföring av vita pixlar
+    fast_spi_write_nbyte(white_buffer, size);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Tvinga uppdatering i A2-läge för att rensa ytan direkt
+    EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
 }

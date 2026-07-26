@@ -1,3 +1,27 @@
+========== BÖRJAN PÅ: ./tests/test_spi.c ==========
+#include <stdio.h>
+#include "DEV_Config.h"
+#include "EPD_IT8951.h"
+
+int main() {
+    printf("Initierar hårdvara...\n");
+    if (DEV_Module_Init() != 0) return 1;
+
+    printf("Hårdvara initierad. Försöker initiera display...\n");
+    fflush(stdout);
+
+    // EPD_IT8951_Init innehåller redan anrop till Reset och SystemRun.
+    // Om detta hänger sig, ligger felet i HAT-kortets svar på SPI.
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140);
+    
+    printf("Display initierad. Bredd: %d\n", dev_info.Panel_W);
+    
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./tests/test_spi.c ==========
+
 ========== BÖRJAN PÅ: ./software/file_io.h ==========
 
 ========== SLUT PÅ: ./software/file_io.h ==========
@@ -76,6 +100,7 @@ void cleanup_display(void);
 int get_physical_x(int col);
 int get_physical_y(int row);
 void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
+void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
 #endif
@@ -84,6 +109,7 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 
 ========== BÖRJAN PÅ: ./firmware/display.c ==========
 #include <stdio.h>
+#include <string.h>
 #include "display.h"
 #include "wim_font_courier.h"
 #include "DEV_Config.h"
@@ -198,6 +224,15 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     EPD_IT8951_Display_Area(x, y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
 }
 
+void init_display(UDOUBLE *target_addr) {
+    // 1. Initiera hårdvara och SPI
+    if (DEV_Module_Init() != 0) {
+        return;
+    }
+
+    // 2. Initiera EPD IT8951 (exempel med VCOM -2.14V / 2140)
+    *target_addr = EPD_IT8951_Init(2140);
+}
 
 void cleanup_display(void) {
      DEV_Module_Exit();
@@ -209,15 +244,6 @@ int get_physical_x(int col) {
 
 int get_physical_y(int row) {
     return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
-}
-
-void redraw_buffer(char (buffer)[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
-    for (int row = 0; row < MAX_ROWS; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            // Vi skickar ALLA tecken, även mellanslag, för att "sudda" den gamla texten
-            render_char(buffer[row][col], get_physical_x(col), get_physical_y(row), target_addr);
-        }
-    }
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -240,6 +266,55 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
     *cursor_col = 0;
 
     // 4. Rita om hela skärmytan i A2-läge
+    redraw_buffer(buffer, target_addr);
+}
+
+void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // Om vi inte har nått kanten behöver vi inte göra något
+    if (*cursor_col < MAX_COLS) return;
+
+    // Kolla om tecknet vi står på eller just skrev är ett mellanslag
+    // Om det är ett mellanslag kan vi bara bryta raden direkt
+    if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
+        *cursor_col = 0;
+        (*cursor_row)++;
+        return;
+    }
+
+    // Annars letar vi bakåt efter det senaste mellanslaget på raden för att flytta hela ordet
+    int break_col = MAX_COLS - 1;
+    while (break_col > 0 && buffer[*cursor_row][break_col] != ' ') {
+        break_col--;
+    }
+
+    // Om inget mellanslag hittades alls på raden (ett mycket långt ord)
+    // tvingas vi kapa ordet vid maxgränsen.
+    if (break_col == 0) {
+        *cursor_col = 0;
+        (*cursor_row)++;
+        return;
+    }
+
+    // Flytta alla tecken från mellanslaget och framåt till nästa rad
+    int chars_to_move = MAX_COLS - (break_col + 1);
+    char temp_word[chars_to_move];
+
+    for (int i = 0; i < chars_to_move; i++) {
+        temp_word[i] = buffer[*cursor_row][break_col + 1 + i];
+        buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
+    }
+
+    // Gå till nästa rad
+    (*cursor_row)++;
+    *cursor_col = 0;
+
+    // Skriv in det flyttade ordet på början av nya raden
+    for (int i = 0; i < chars_to_move; i++) {
+        buffer[*cursor_row][*cursor_col] = temp_word[i];
+        (*cursor_col)++;
+    }
+
+    // Rita om de berörda raderna på skärmen via vår buffertfunktion
     redraw_buffer(buffer, target_addr);
 }
 
@@ -370,6 +445,1384 @@ char keyboard_get_char(struct input_event *ev) {
 
 ========== SLUT PÅ: ./firmware/keyboard.c ==========
 
+========== BÖRJAN PÅ: ./archive/draw_char.c ==========
+#include <stdint.h>
+
+// Berättar för kompilatorn att set_pixel finns i framebuffer.c
+extern void set_pixel(int x, int y, int black);
+
+// Anpassa detta efter hur din array faktiskt heter i font20.c
+extern const uint8_t Font20_Table[];
+
+// Funktionen ritar in ett tecken i framebuffern via set_pixel
+void draw_char_to_fb(char c, int cursor_x, int cursor_y) {
+    if (c < 32 || c > 126) c = '?';
+    
+    int glyph_index = c - 32;
+    int bytes_per_row = 2; // Baserat på din beskrivning om 14 pixlar (2 bytes)
+    int glyph_size = 20 * bytes_per_row; // 40 bytes totalt per tecken
+    
+    // Peka på början av det specifika tecknets data
+    const uint8_t *glyph_ptr = &Font20_Table[glyph_index * glyph_size];
+
+    for (int row = 0; row < 20; row++) {
+        for (int byte_col = 0; byte_col < bytes_per_row; byte_col++) {
+            
+            // Hämta rätt byte för denna rad och kolumn
+            uint8_t pixel_byte = glyph_ptr[(row * bytes_per_row) + byte_col];
+
+            for (int bit = 0; bit < 8; bit++) {
+                int is_black = (pixel_byte & (1 << (7 - bit))) != 0;
+                int pixel_x = cursor_x + (byte_col * 8) + bit;
+                int pixel_y = cursor_y + row;
+
+                set_pixel(pixel_x, pixel_y, is_black);
+            }
+        }
+    }
+}
+
+/*void draw_char_generic(sFont *font, char c, int x, int y){
+    // Använd font-Width och font->Height
+    // Detta gör att vi kan skicka in &Dont20 eller &Font16
+    printf("Ritar tecken '%c' med dimensionerna %dx%d\n", c, font->Width, font->Height);
+}*/
+
+========== SLUT PÅ: ./archive/draw_char.c ==========
+
+========== BÖRJAN PÅ: ./archive/framebuffer.c ==========
+#include "lib/GUI/GUI_Paint.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include <stdlib.h>
+
+int init_display(IT8951_Dev_Info *dev_info, UDOUBLE *target_addr) {
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+    fflush(stdout);
+
+    // Init-anrop med VCOM satt till 2140 (-2.14V)
+    Dev_Info = EPD_IT8951_Init(2140);
+    printf("Init-anrop avklarat.\n");
+    fflush(stdout);
+
+    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Bygg upp font-cachen i minnet före skärmrensningen
+    init_glyph_cache(&Font24);
+
+    // Rensa skärmen vid uppstart
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+}
+
+========== SLUT PÅ: ./archive/framebuffer.c ==========
+
+========== BÖRJAN PÅ: ./archive/best_performing_main.c ==========
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+// 1. Datastruktur för den pre-genererade cachen
+typedef struct {
+    UBYTE bitmap[256]; // Maxstorlek för en 1-bpp glyph. Tillräckligt för t.ex. 32x64 px.
+    UWORD width;
+    UWORD height;
+    bool is_cached;
+} GlyphCache;
+
+// Global cache-array för standard-ASCII (0-127)
+GlyphCache ascii_cache[128];
+
+// 2. Funktion: Förbered cachen vid uppstart
+void init_glyph_cache(sFONT *font) {
+    int bytes_per_line = (font->Width + 7) / 8;
+    int bytes_per_char = font->Height * bytes_per_line;
+
+    for (int i = 32; i < 127; i++) { // ASCII 32 (Space) till 126 (~)
+        int offset = (i - ' ') * bytes_per_char;
+
+        // Kopiera över den monokroma datan från font-filen till RAM-cachen
+        memcpy(ascii_cache[i].bitmap, &font->table[offset], bytes_per_char);
+        ascii_cache[i].width = font->Width;
+        ascii_cache[i].height = font->Height;
+        ascii_cache[i].is_cached = true;
+    }
+    printf("Glyph-cache förberedd i RAM.\n");
+}
+
+// 3. Funktion: Rendera ett tecken direkt från cachen
+void render_cached_char(char c, int x, int y, UDOUBLE target_addr) {
+    // Om tecknet inte finns i cachen hoppar vi över
+    if (c < 0 || c > 127 || !ascii_cache[(int)c].is_cached) {
+        return;
+    }
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    // Peka in i vår pre-allokerade RAM-cache för att undvika CPU-cykler
+    load_info.Source_Buffer_Addr = ascii_cache[(int)c].bitmap;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_2BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = ascii_cache[(int)c].width;
+    area_info.Area_H = ascii_cache[(int)c].height;
+
+    // Skicka den lilla rutan (damage box) över SPI till controllern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(&load_info, &area_info, true);
+
+    // Uppdatera skärmen i det snabba A2-läget (som motsvarar Mode 6 för aktuell LUT)
+    EPD_IT8951_Display_AreaBuf(x, y, area_info.Area_W, area_info.Area_H, 6, target_addr);
+}
+
+// 4. Huvudprogram och inmatningsloop
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+    IT8951_Dev_Info Dev_Info;
+
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+    fflush(stdout);
+
+    // Init-anrop med VCOM satt till 2140 (-2.14V)
+    Dev_Info = EPD_IT8951_Init(2140);
+    printf("Init-anrop avklarat.\n");
+    fflush(stdout);
+
+    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Bygg upp font-cachen i minnet före skärmrensningen
+    init_glyph_cache(&Font24);
+
+    // Rensa skärmen vid uppstart
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+
+    // Öppna inmatningsströmmen från tangentbordet
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) {
+        printf("Kunde inte öppna tangentbordet. Kontrollera behörigheter (sudo).\n");
+        return 1;
+    }
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+    fflush(stdout);
+
+    struct input_event ev;
+
+    // Evdev-loop som lyssnar på inmatning
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) { // 1 = Key press
+
+            // TODO: Mappa ev.code till ett faktiskt char-tecken här.
+            // För detta utkast låtsas vi att varje knapp motsvarar 'A'.
+            char c = 'A';
+
+            render_cached_char(c, cursor_x, cursor_y, target_addr);
+
+            cursor_x += ascii_cache[(int)c].width;
+
+            // Enkel radbrytning om markören når skärmens högra kant
+            if(cursor_x > (Dev_Info.Panel_W - ascii_cache[(int)c].width)) {
+                cursor_x = 100; // Återställ till vänstermarginal
+                cursor_y += ascii_cache[(int)c].height; // Flytta ned en rad
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/best_performing_main.c ==========
+
+========== BÖRJAN PÅ: ./archive/buffert_rendering.c ==========
+// Förslag på olika sätt att rendera en cache
+
+// Detta använder Waveshares Paint-bibliotek
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "DEV_Config.h"
+#include "GUI_Paint.h"
+#include "EPD_IT8951.h"
+
+// Storlek för 1-bpp framebuffer: (1448 * 1072) / 8 = 194464 bytes
+#define BUFFER_SIZE (1448 * 1072 / 8)
+
+void run_framebuffer_example(void) {
+    // 1. Allokera minne för den virtuella skärmen i RAM
+    UBYTE *frame_buffer = (UBYTE *)malloc(BUFFER_SIZE);
+    if (frame_buffer == NULL) {
+        printf("Kunde inte allokera minne för rambuffert.\n");
+        return;
+    }
+
+    // 2. Initiera ytan med vit bakgrund (WHITE = 1)
+    Paint_NewImage(frame_buffer, 1448, 1072, 0, WHITE);
+    Paint_SelectImage(frame_buffer);
+    Paint_Clear(WHITE);
+
+    // 3. Rita lite text i bufferten med standardbiblioteket
+    Paint_DrawString_EN(50, 50, "Wimwriter v0.1", &Font24, WHITE, BLACK);
+    Paint_DrawString_EN(50, 90, "Skrivmaskinen är redo.", &Font20, WHITE, BLACK);
+
+    // 4. Skicka hela bufferten till IT8951-kontrollern
+    // (Använder Waveshares funktion för bildinläsning och visning)
+    EPD_IT8951_Display_Frame(frame_buffer, 0, 0, 1448, 1072, 0);
+
+    // 5. Städa upp
+    free(frame_buffer);
+}
+
+
+// Läs font-tabellen direkt utan GUI_Paint
+// Eftersom Waveshares inbyggda font-tabeller (font24.c) redan är lagrade
+// i rent 1-bpp-format (där 1 är text och 0 är bakgrund) kan vi hoppa över
+// GUI_Paint helt och hållet när vi bygger cachen.
+void init_glyph_cache(sFONT *font) {
+    // Beräkna bytes per rad med 8-bit alignment
+    int bytes_per_line = (font->Width + 7) / 8;
+    int bytes_per_char = font->Height * bytes_per_line;
+    UWORD aligned_width = bytes_per_line * 8;
+
+    for (int i = 32; i < 127; i++) { // ASCII 32 till 126
+        int offset = (i - ' ') * bytes_per_char;
+
+        // Kontrollera att inte indexet går utanför font-tabellen
+        // (eller nollställ cachen först)
+        memset(ascii_cache[i].bitmap, 0x00, sizeof(ascii_cache[i].bitmap));
+
+        // Kopiera rådata direkt från font-strukturen till cachen
+        memcpy(ascii_cache[i].bitmap, &font->table[offset], bytes_per_char);
+
+        ascii_cache[i].width = aligned_width;
+        ascii_cache[i].height = font->Height;
+        ascii_cache[i].is_cached = true;
+    }
+
+    printf("Glyph-cache inläst direkt från font-tabell med korrekt (?) polaritet.\n");
+}
+
+========== SLUT PÅ: ./archive/buffert_rendering.c ==========
+
+========== BÖRJAN PÅ: ./archive/shapes.c ==========
+#include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+int main(int argc, char *argv[])
+{
+    // 1. Initiera hårdvara och IT8951-kontroller
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    UDOUBLE Vcom = 2140;
+    Dev_Info = EPD_IT8951_Init(Vcom);
+
+    // 2. Allokera minne för den virtuella framebufferten
+    UWORD Imagesize = ((Dev_Info.PanelW % 8 == 0) ? (Dev_Info.PanelW/ 8) : (Dev_Info.PanelW/ 8 + 1)) * Dev_Info.PanelH;
+    UBYTE *BlackImage = (UBYTE *)malloc(Imagesize);
+    if (BlackImage == NULL) {
+        return -1;
+    }
+
+    Paint_NewImage(BlackImage, IT8951_Width, IT8951_Height, 0, WHITE);
+    Paint_Clear(WHITE);
+
+    // 3. Slumpa ut geometriska former över ytan
+    srand(time(NULL));
+    int total_shapes = 40;
+
+    for (int i = 0; i < total_shapes; i++) {
+        UWORD x1 = rand() % (IT8951_Width - 250);
+        UWORD y1 = rand() % (IT8951_Height - 250);
+        UWORD x2 = x1 + (rand() % 200 + 30);
+        UWORD y2 = y1 + (rand() % 200 + 30);
+
+        int type = rand() % 3;
+
+        if (type == 0) {
+            // Tom kvadrat
+            Paint_DrawRectangle(x1, y1, x2, y2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+        } else if (type == 1) {
+            // Fylld kvadrat
+            Paint_DrawRectangle(x1, y1, x2, y2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        } else {
+            // Rakt streck
+            Paint_DrawLine(x1, y1, x2, y2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        }
+    }
+
+    // 4. Skicka hela bufferten till skärmen
+    IT8951_Display_Frame(BlackImage, 0, 0, IT8951_Width, IT8951_Height, INIT_Mode);
+
+    // 5. Städa upp
+    free(BlackImage);
+    DEV_Module_Exit();
+
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/shapes.c ==========
+
+========== BÖRJAN PÅ: ./archive/old_main0723.c ==========
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/GUI/GUI_paint.h"
+#include "lib/Fonts/fonts.h"
+
+// 1. Datastruktur för den pre-genererade cachen
+typedef struct {
+    UBYTE bitmap[256]; // Maxstorlek för en 1-bpp glyph. Tillräckligt för t.ex. 32x64 px.
+    UWORD width;
+    UWORD height;
+    bool is_cached;
+} GlyphCache;
+
+// Global cache-array för standard-ASCII (0-127)
+GlyphCache ascii_cache[128];
+
+// Funktion: Förbered cachen vid uppstart
+void init_glyph_cache(sFONT *font) {
+    // Avrunda bredden uppåt till närmaste multipel av 8 för att undvika förskjutning
+    UWORD aligned_width = (font->Width + 7) & ~7;
+    UWORD height = font->Height;
+
+    // Beräkna hur mycket minne en 1-bpp-ruta kräver
+    UDOUBLE image_size = ((aligned_width * height) / 8);
+    UBYTE *temp_image = (UBYTE *)malloc(image_size);
+
+    // Initiera en virtuell canvas för ett enda tecken
+    // 1 representerar WHITE i standardkonfigurationen
+    Paint_NewImage(temp_image, aligned_width, height, 0, 1);
+    Paint_SelectImage(temp_image);
+
+    for (int i = 32; i < 127; i++) {
+        Paint_Clear(1); // Rensa bakgrunden till vit
+
+        // Rita tecknet via det beprövade biblioteket
+        // 0 = BLACK (textfärg), 1 = WHITE (bakgrund)
+        Paint_DrawChar(0, 0, (char)i, font, 0, 1);
+
+        // Spara den formaterade rutan i vår array
+        memcpy(ascii_cache[i].bitmap, temp_image, image_size);
+        ascii_cache[i].width = aligned_width; // Viktigt: använd den justerade bredden
+        ascii_cache[i].height = height;
+        ascii_cache[i].is_cached = true;
+    }
+
+    free(temp_image);
+    printf("Glyph-cache byggd via Paint.\n");
+}
+
+
+// Funktion: Rendera ett tecken direkt från cachen
+void render_cached_char(char c, int x, int y, UDOUBLE target_addr) {
+    // Om tecknet inte finns i cachen hoppar vi över
+    if (c < 0 || c > 127 || !ascii_cache[(int)c].is_cached) {
+        return;
+    }
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    // Peka in i vår pre-allokerade RAM-cache för att undvika CPU-cykler
+    load_info.Source_Buffer_Addr = ascii_cache[(int)c].bitmap;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+
+    // Andrat från 2BPP till 8BPP. Waveshares 1-bp-funktion förväntar sig
+    // ofta denna flagga i strukturen även om datan skickas som 1-bpp.
+    load_info.Pixel_Format = IT8951_8BPP;
+
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = ascii_cache[(int)c].width;
+    area_info.Area_H = ascii_cache[(int)c].height;
+
+    // Skicka den lilla rutan (damage box) över SPI till controllern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(&load_info, &area_info, true);
+
+    // Uppdatera skärmen i det snabba A2-läget (som motsvarar Mode 6 för aktuell LUT)
+    EPD_IT8951_Display_AreaBuf(x, y, area_info.Area_W, area_info.Area_H, 6, target_addr);
+}
+
+static int init_display(IT8951_Dev_Info *dev_info, UDOUBLE *target_addr) {
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+    fflush(stdout);
+
+    // Init-anrop med VCOM satt till 2140 (-2.14V)
+    *dev_info = EPD_IT8951_Init(2140);
+    printf("Init-anrop avklarat.\n");
+    fflush(stdout);
+
+    *target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Bygg upp font-cachen i minnet före skärmrensningen
+    // init_glyph_cache(&Font24);
+
+    // Rensa skärmen vid uppstart
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+
+    return 0;
+}
+
+// 4. Huvudprogram och inmatningsloop
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+    IT8951_Dev_Info Dev_Info;
+
+    if (init_display_hardware(&Dev_nfo, &target_addr != 0)) {
+        printf("Kunde inte initiera display.\n");
+        return 1;
+    }
+
+    // Öppna inmatningsströmmen från tangentbordet
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) {
+        printf("Kunde inte öppna tangentbordet. Kontrollera behörigheter (sudo).\n");
+        return 1;
+    }
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+    fflush(stdout);
+
+    struct input_event ev;
+
+    // Evdev-loop som lyssnar på inmatning
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) { // 1 = Key press
+
+            // TODO: Mappa ev.code till ett faktiskt char-tecken här.
+            // För detta utkast låtsas vi att varje knapp motsvarar 'A'.
+            char c = 'A';
+
+            render_cached_char(c, cursor_x, cursor_y, target_addr);
+
+            cursor_x += ascii_cache[(int)c].width;
+
+            // Enkel radbrytning om markören når skärmens högra kant
+            if(cursor_x > (Dev_Info.Panel_W - ascii_cache[(int)c].width)) {
+                cursor_x = 100; // Återställ till vänstermarginal
+                cursor_y += ascii_cache[(int)c].height; // Flytta ned en rad
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/old_main0723.c ==========
+
+========== BÖRJAN PÅ: ./archive/old_0721b_main.c ==========
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+/*
+// Vi förbereder en global eller statisk konfiguration för renderingen
+static IT8951_Dev_Info dev_info;
+
+// Lägg till denna buffert
+static UBYTE char_buffer[100]; //Stor nog för 20x20 pixlar
+*/
+
+// void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
+//     // Beräkna offset för glyphen (ASCII ' ' är start)
+//     int bytes_per_char = Font24.Height * (Font24.Width / 8);
+//     int offset = (c - ' ') * bytes_per_char;
+
+//     // 2. Sätt källadressen till rätt position i font-tabellen
+//     load_info->Source_Buffer_Addr = (UBYTE *)&Font24.table[offset];
+
+//     // 3. Konfigurera pixelformat och endianness
+//     load_info->Pixel_Format = IT8951_3BPP; // Använd 1 bit för font-data
+//     load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+//     load_info->Rotate = IT8951_ROTATE_0;
+// }
+//
+void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info, sFONT *font) {
+    // Beräkna offset baserat på tecknets position i ASCII-tabellen.
+    // Waveshares font-tabeller börjar normalt vid mellanslag (ASCII 32).
+    int bytes_per_line = (font->Width + 7) / 8;
+    int bytes_per_char = font->Height * bytes_per_line;
+    int offset = (c - ' ') * bytes_per_char;
+
+    // Peka direkt på tecknets monokroma data för lägsta möjliga latens
+    load_info->Source_Buffer_Addr = (UBYTE *)&font->table[offset];
+
+    // Konfigurera packning och endianness
+    load_info->Pixel_Format = IT8951_2BPP; // I Waveshares HostArea-API används ofta detta för 1bp-överföringar
+    load_info->Endian_Type = IT8951_LDIMG_L_ENDIAN; // Justera till B_ENDIAN om bitarna hamnar spegelvänt
+    load_info->Rotate = IT8951_ROTATE_0;
+}
+
+void render_char(char c, int x, int y, UDOUBLE target_addr, sFONT *font) {
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    // Förbered bildinformationen
+    prepare_char_bitmap(c, &load_info, font);
+    load_info.Target_Memory_Addr = target_addr;
+
+    // Definiera den uppdaterade rektangeln (bounding box)
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = font->Width;
+    area_info.Area_H = font->Height;
+
+    // Skicka tecknets datablock till controllern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(&load_info, &area_info, true);
+
+    // Uppdatera endast den lilla ytan på e-bläcksskärmen
+    // Vi använder A2_Mode för snabbast möjliga uppdatering i skrivläget
+    EPD_IT8951_Display_AreaBuf(x, y, font->Width, font->Height, A2_Mode, target_addr);
+}
+
+// void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+
+//     // Använd Font24 direkt för att beräkna storleken
+//     int bytes_per_line = (Font24.Width + 7) / 8; //  (14+7)/8 = 2
+//     int bytes_per_char = Font24.Height * bytes_per_line;
+
+//     // Debug: tvinga offset för 'A'
+//     // int offset = (65 - 32) * 40; // 1320
+//     // printf("DEBUG: Använder offset %d för '%c'\n", offset, c);
+
+//     // int offset = (c - ' ') * bytes_per_char;
+//     //const UBYTE *bitmap = &Font24.table[offset];
+//     const UBYTE *bitmap = &Font24.table[40];
+//     printf("DEBUG: Byte på offset 40: 0x%02X\n", bitmap[0]);
+
+//     printf("Renderar '%c' vid %d, %d\n", c, x, y);
+
+//     // Uppdatera positionen i area_info
+//     area_info->Area_X = x;
+//     area_info->Area_Y = y;
+//     area_info->Area_W = Font24.Width;
+//     area_info->Area_H = Font24.Height;
+
+//     load_info->Source_Buffer_Addr = (UBYTE*)bitmap;
+//     load_info->Target_Memory_Addr = target_addr;
+//     load_info->Pixel_Format = IT8951_3BPP; // Stor risk att 8BPP ska användas
+
+//     load_info->Pixel_Format = IT8951_3BPP;
+//     load_info->Rotate = IT8951_ROTATE_0;
+//     load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+
+//     // Debug
+//     printf("DEBUG: Första 4 byten för '%c': 0x%02X 0x%02X 0x%02X 0x%02X\n",
+//        c, bitmap[0], bitmap[1], bitmap[2], bitmap[3]);
+
+//     // Skriv till kontrollern
+//     EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, true);
+
+//     // Uppdatera skärmen, mode 0 verkar satbilast
+//     EPD_IT8951_Display_AreaBuf(x, y, Font24.Width, Font24.Height, 2, target_addr);
+// }
+
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    IT8951_Load_Img_Info load_img_info;
+    IT8951_Area_Img_Info area_img_info;
+
+    //Deklarera dess lokalt:
+    IT8951_Dev_Info Dev_Info;
+    // UDOUBLE Init_Target_Memory_Addr;
+
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+
+    // Init-anrop
+    printf("Init-anrop\n");
+    Dev_Info = EPD_IT8951_Init(2140);
+
+    // Skriv ut skärmens specifikationer och versioner i terminalen
+        printf("--- IT8951 Status ---\n");
+        printf("Panelstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+        printf("FW-version:   %.16s\n", (char *)Dev_Info.FW_Version);
+        printf("LUT-version:  %.16s\n", (char *)Dev_Info.LUT_Version);
+        printf("---------------------\n");
+        fflush(stdout);
+
+    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Testa
+    printf("Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
+    printf("Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
+
+    if (Dev_Info.Panel_W == 0) {
+        printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
+    } else {
+        printf("Kontakt upprättad: Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+    }
+
+    // Initial Clear
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+
+    // Öppna input
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) return 1;
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+
+    struct input_event ev;
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+
+            // Debug:
+            printf("Tangent tryckt: kod %d\n", ev.code);
+
+            //Skriv ut tecknet
+            render_char('A', cursor_x, cursor_y, target_addr, &Font24);
+
+            cursor_x += Font24.Width;
+
+            if(cursor_x > (Dev_Info.Panel_W - Font24.Width)) {
+                cursor_x = 100;
+                cursor_y += Font24.Height;
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/old_0721b_main.c ==========
+
+========== BÖRJAN PÅ: ./archive/framebuffer_example.c ==========
+//GCC för att bygga detta exempel:
+// gcc -O3 -Wall -g -D BCM -I. -I./lib/Config -I./lib/e-Paper -I./lib/Fonts -I./lib/GUI main.c ./lib/Config/DEV_Config.c ./lib/GUI/GUI_Paint.c ./lib/e-Paper/EPD_IT8951.c ./lib/Fonts/font24.c -o wimwriter -lbcm2835 -lpthread -lm
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "lib/GUI/GUI_Paint.h"
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+// Storlek för 1-bpp framebuffer: (1448 * 1072) / 8 = 194464 bytes
+#define BUFFER_SIZE (1448 * 1072 / 8)
+
+void run_framebuffer_example(void) {
+    // 1. Allokera minne för den virtuella skärmen i RAM
+    UBYTE *frame_buffer = (UBYTE *)malloc(BUFFER_SIZE);
+    if (frame_buffer == NULL) {
+        printf("Kunde inte allokera minne för rambuffert.\n");
+        return;
+    }
+
+    // 2. Initiera ytan med vit bakgrund (WHITE = 1)
+    Paint_NewImage(frame_buffer, 1448, 1072, 0, WHITE);
+    Paint_SelectImage(frame_buffer);
+    Paint_Clear(WHITE);
+
+    // 3. Rita lite text i bufferten med standardbiblioteket
+    Paint_DrawString_EN(50, 50, "Wimwriter v0.1", &Font24, WHITE, BLACK);
+    Paint_DrawString_EN(50, 90, "Skrivmaskinen är redo.", &Font20, WHITE, BLACK);
+
+    // 4. Skicka hela bufferten till IT8951-kontrollern
+    // (Använder Waveshares funktion för bildinläsning och visning)
+    EPD_IT8951_Display_Frame(frame_buffer, 0, 0, 1448, 1072, 0);
+
+    // 5. Städa upp
+    free(frame_buffer);
+}
+
+========== SLUT PÅ: ./archive/framebuffer_example.c ==========
+
+========== BÖRJAN PÅ: ./archive/render_fast_char.c ==========
+#include <stdint.h>
+#include "EPD_IT8951.h"
+
+// Typsnittsdimensioner
+#define GLYPH_W 32
+#define GLYPH_H 64
+#define GLYPH_SIZE_BYTES (GLYPH_W * GLYPH_H) // 2048 bytes per tecken vid 8bpp
+#define IT8951_A2_MODE 6
+#define TARGET_MEM_ADDR 122480 // Enligt hårdvaruspecifikationen
+
+extern uint8_t font_cache[128][GLYPH_SIZE_BYTES];
+
+void Render_Fast_Char(char c, UWORD X, UWORD Y) {
+    if (c < 0 || c > 127) return;
+
+    IT8951_Load_Img_Info Load_Img_Info;
+    IT8951_Area_Img_Info Area_Img_Info;
+
+    // 1. Förbered minnesinformation (8bpp)
+    Load_Img_Info.Source_Buffer_Addr = font_cache[(int)c];
+    Load_Img_Info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    Load_Img_Info.Pixel_Format = IT8951_8BPP;
+    Load_Img_Info.Rotate = IT8951_ROTATE_0;
+    Load_Img_Info.Target_Memory_Addr = TARGET_MEM_ADDR;
+
+    // 2. Definiera uppdateringsrutan ("damage box")
+    Area_Img_Info.Area_X = X;
+    Area_Img_Info.Area_Y = Y;
+    Area_Img_Info.Area_W = GLYPH_W;
+    Area_Img_Info.Area_H = GLYPH_H;
+
+    // 3. Ställ in minnesadress och initiera överföring
+    EPD_IT8951_WaitForDisplayReady();
+    EPD_IT8951_SetTargetMemoryAddr(Load_Img_Info.Target_Memory_Addr);
+    EPD_IT8951_LoadImgAreaStart(&Load_Img_Info, &Area_Img_Info);
+
+    // 4. Skicka pixeldata blixtsnabbt över SPI (bypass av Waveshares UWORD-loop)
+    // Eftersom vår cache är 8bpp matar vi bara bytes rakt in i kontrollern.
+    UWORD Write_Preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(Write_Preamble >> 8);
+    DEV_SPI_WriteByte(Write_Preamble);
+    EPD_IT8951_ReadBusy();
+
+    uint8_t *pixel_ptr = font_cache[(int)c];
+    for(uint32_t i = 0; i < GLYPH_SIZE_BYTES; i++) {
+        DEV_SPI_WriteByte(*pixel_ptr);
+        pixel_ptr++;
+    }
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // 5. Beordra skärmen att omedelbart rita upp rutan i A2-läge
+    EPD_IT8951_Display_Area(X, Y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
+}
+
+========== SLUT PÅ: ./archive/render_fast_char.c ==========
+
+========== BÖRJAN PÅ: ./archive/old_main.c ==========
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+/*
+// Vi förbereder en global eller statisk konfiguration för renderingen
+static IT8951_Dev_Info dev_info;
+
+// Lägg till denna buffert
+static UBYTE char_buffer[100]; //Stor nog för 20x20 pixlar
+*/
+
+void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
+    // Beräkna offset för glyphen (ASCII ' ' är start)
+    int bytes_per_char = Font20.Height * (Font20.Width / 8);
+    int offset = (c - ' ') * bytes_per_char;
+
+    // 2. Sätt källadressen till rätt position i font-tabellen
+    load_info->Source_Buffer_Addr = (UBYTE *)&Font20.table[offset];
+
+    // 3. Konfigurera pixelformat och endianness
+    load_info->Pixel_Format = IT8951_3BPP; // Använd 1 bit för font-data
+    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+    load_info->Rotate = IT8951_ROTATE_0;
+}
+
+void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+
+    // Använd Font20 direkt för att beräkna storleken
+    int bytes_per_line = (Font20.Width + 7) / 8; //  (14+7)/8 = 2
+    int bytes_per_char = Font20.Height * bytes_per_line;
+
+    // Debug: tvinga offset för 'A'
+    // int offset = (65 - 32) * 40; // 1320
+    // printf("DEBUG: Använder offset %d för '%c'\n", offset, c);
+
+    // int offset = (c - ' ') * bytes_per_char;
+    //const UBYTE *bitmap = &Font20.table[offset];
+    const UBYTE *bitmap = &Font20.table[40];
+    printf("DEBUG: Byte på offset 40: 0x%02X\n", bitmap[0]);
+
+    printf("Renderar '%c' vid %d, %d\n", c, x, y);
+
+    // Uppdatera positionen i area_info
+    area_info->Area_X = x;
+    area_info->Area_Y = y;
+    area_info->Area_W = Font20.Width;
+    area_info->Area_H = Font20.Height;
+
+    load_info->Source_Buffer_Addr = (UBYTE*)bitmap;
+    load_info->Target_Memory_Addr = target_addr;
+    load_info->Pixel_Format = IT8951_3BPP; // Stor risk att 8BPP ska användas
+
+    load_info->Pixel_Format = IT8951_3BPP;
+    load_info->Rotate = IT8951_ROTATE_0;
+    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+
+    // Debug
+    printf("DEBUG: Första 4 byten för '%c': 0x%02X 0x%02X 0x%02X 0x%02X\n",
+       c, bitmap[0], bitmap[1], bitmap[2], bitmap[3]);
+
+    // Skriv till kontrollern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, true);
+
+    // Uppdatera skärmen, mode 0 verkar satbilast
+    EPD_IT8951_Display_AreaBuf(x, y, Font20.Width, Font20.Height, 2, target_addr);
+}
+
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    IT8951_Load_Img_Info load_img_info;
+    IT8951_Area_Img_Info area_img_info;
+
+    //Deklarera dess lokalt:
+    IT8951_Dev_Info Dev_Info;
+    // UDOUBLE Init_Target_Memory_Addr;
+
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+
+    // Init-anrop
+    Dev_Info = EPD_IT8951_Init(2140);
+    printf("Vi klarade init-anropet!");
+
+    // Häpmta adressen från den initierade strukturen
+    // Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
+
+    // EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, 0);
+
+    printf("Skärmstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+
+    UDOUBLE target_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Testa
+    printf("Debug: Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
+    printf("Debug: Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
+
+    // Testa en hård rendering
+    // printf("Testar rendering av 'A'...\n");
+    // render_char_fast('A', 100, 100, target_addr, &load_img_info, &area_img_info);
+
+    // Rensar skärmen till vitt (0 = vit, 1 = svart, beroende på modell)
+    // EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 1);
+
+    if (Dev_Info.Panel_W == 0) {
+        printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
+    } else {
+        printf("Kontakt upprättad. Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+}
+
+    // Initial Clear
+    EPD_IT8951_Clear_Refresh(Dev_Info, target_addr, 0);
+
+    // Öppna input
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) return 1;
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+
+    struct input_event ev;
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+
+            // Vänta tills skärmen är ledig?
+            // EPD_IT8951_WaitForDisplayReady();
+
+            // Förbered datan för just detta tecken
+            prepare_char_bitmap('A', &load_img_info);
+
+            printf("Tangent tryckt: kod %d\n", ev.code);
+
+            //Skriv ut glyfen
+            render_char_fast('A', cursor_x, cursor_y, target_addr, &load_img_info, &area_img_info);
+
+            cursor_x += Font20.Width;
+
+            if(cursor_x > (Dev_Info.Panel_W - Font20.Width)) {
+                cursor_x = 100;
+                cursor_y += Font20.Height;
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/old_main.c ==========
+
+========== BÖRJAN PÅ: ./archive/old_main2.c ==========
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+/*
+// Vi förbereder en global eller statisk konfiguration för renderingen
+static IT8951_Dev_Info dev_info;
+
+// Lägg till denna buffert
+static UBYTE char_buffer[100]; //Stor nog för 20x20 pixlar
+*/
+
+/**
+ * Förbereder load_info med adressen till bitmap-datan för ett specifikt tecken.
+ * Index 0 i tabellen motsvarar ' ' (ASCII 32).
+ */
+void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
+    int bytes_per_line = 2; // (Font20.Width + 7) / 8
+    int bytes_per_char = Font20.Height * bytes_per_line;
+
+    int index = (int)c - 32;
+
+    // Säkerhetskontroll: Om tecknet är utanför standard-ASCII,
+    // returnera adressen för ett '?' eller mellanslag för att undvika segmenteringsfel.
+    if (index < 0 || index > 94) {
+        index = 0; // Fallback till mellanslag
+    }
+
+    // Beräkna offset (40 bytes per tecken enligt font20.c)
+    int offset = index * bytes_per_char;
+
+    static UBYTE test_pattern[40];
+// Skapa ett mönster: varannan byte 0xAA, varannan 0x55 (ger ränder)
+for(int i=0; i<40; i++) test_pattern[i] = (i % 2 == 0) ? 0xAA : 0x55;
+
+load_info->Source_Buffer_Addr = test_pattern;
+
+    // Konfigurera load_info
+    // Vi använder pekararitmetik för att peka direkt in i Font20-tabellen
+    load_info->Source_Buffer_Addr = (UBYTE *)&Font20.table[offset];
+
+    // Vi behåller formatinställningar här för att hålla render-funktionen ren
+    load_info->Pixel_Format = IT8951_3BPP;
+    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+    load_info->Rotate = IT8951_ROTATE_0;
+}
+
+char map_evdev_to_ascii(int code) {
+    // Exempel: evdev kod 30 = 'a', 31 = 's'
+    // Detta är en enkel mappning för teständamål
+    switch(code) {
+        case 30: return 'A'; // Hårdkodat för test
+        case 48: return 'B';
+        case 46: return 'C';
+        case 57: return ' ';
+        default: return 'x';
+    }
+}
+
+
+void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+
+    UDOUBLE active_render_addr = 122480; // Testa hårdkodad address
+    int index = (c - ' ');
+    if (index < 0 || index > 95) return;
+
+    // Använd konfigurationen från prepare_char_bitmap, ändra bara målet
+    load_info->Target_Memory_Addr = target_addr;
+
+    printf("Renderar '%c' vid %d, %d\n", c, x, y);
+
+    area_info->Area_X = x;
+    area_info->Area_Y = y;
+    area_info->Area_W = Font20.Width;  // Skulle förmodligen vara 14...
+    area_info->Area_H = Font20.Height; // Är förmodligen 20...
+
+    static UBYTE debug_bitmap[40];
+    for(int i=0; i<40; i++) debug_bitmap[i] = 0xAA;
+
+    load_info->Source_Buffer_Addr = debug_bitmap;
+
+    // Skriv till kontrollern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, false);
+
+    // Uppdatera skärmen
+    // EPD_IT8951_Display_AreaBuf(x, y, 16, 20, 2, target_addr);
+    EPD_IT8951_Display_AreaBuf(x, y, 16, 20, 2, active_render_addr);
+}
+
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    IT8951_Dev_Info Dev_Info;
+    IT8951_Load_Img_Info load_img_info;
+    IT8951_Area_Img_Info area_img_info;
+
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+
+    // Init-anrop
+    Dev_Info = EPD_IT8951_Init(2140);
+
+    // Häpmta adressen från den initierade strukturen
+    // Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
+
+    printf("Skärmstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+
+    UDOUBLE base_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Testa
+    printf("Debug: Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
+    printf("Debug: Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
+
+    if (Dev_Info.Panel_W == 0) {
+        printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
+    } else {
+        printf("Kontakt upprättad. Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+}
+
+    printf("Waveshares base_addr: %d\n", base_addr);
+    // Initial Clear
+    EPD_IT8951_Clear_Refresh(Dev_Info, base_addr, 0);
+
+    // Öppna input
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) return 1;
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+
+    struct input_event ev;
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+
+            char current_char = map_evdev_to_ascii(ev.code);
+
+            printf("Tangent tryckt: kod %d\n", ev.code);
+
+            // Förbered glyfen
+            prepare_char_bitmap(current_char, &load_img_info);
+
+            //Skriv ut glyfen
+            render_char_fast(current_char, cursor_x, cursor_y, base_addr, &load_img_info, &area_img_info);
+
+            cursor_x += Font20.Width;
+
+            if(cursor_x > (Dev_Info.Panel_W - Font20.Width)) {
+                cursor_x = 100;
+                cursor_y += Font20.Height;
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/old_main2.c ==========
+
+========== BÖRJAN PÅ: ./archive/old_0721_main.c ==========
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include <stdbool.h>
+
+#include "lib/Config/DEV_Config.h"
+#include "lib/e-Paper/EPD_IT8951.h"
+#include "lib/Fonts/fonts.h"
+
+/*
+// Vi förbereder en global eller statisk konfiguration för renderingen
+static IT8951_Dev_Info dev_info;
+
+// Lägg till denna buffert
+static UBYTE char_buffer[100]; //Stor nog för 20x20 pixlar
+*/
+
+/**
+ * Förbereder load_info med adressen till bitmap-datan för ett specifikt tecken.
+ * Index 0 i tabellen motsvarar ' ' (ASCII 32).
+ */
+void prepare_char_bitmap(char c, IT8951_Load_Img_Info *load_info) {
+    int bytes_per_line = 2; // (Font20.Width + 7) / 8
+    int bytes_per_char = Font20.Height * bytes_per_line;
+
+    int index = (int)c - 32;
+
+    // Säkerhetskontroll: Om tecknet är utanför standard-ASCII,
+    // returnera adressen för ett '?' eller mellanslag för att undvika segmenteringsfel.
+    if (index < 0 || index > 94) {
+        index = 0; // Fallback till mellanslag
+    }
+
+    // Beräkna offset (40 bytes per tecken enligt font20.c)
+    int offset = index * bytes_per_char;
+
+    static UBYTE test_pattern[40];
+// Skapa ett mönster: varannan byte 0xAA, varannan 0x55 (ger ränder)
+for(int i=0; i<40; i++) test_pattern[i] = (i % 2 == 0) ? 0xAA : 0x55;
+
+load_info->Source_Buffer_Addr = test_pattern;
+
+    // Konfigurera load_info
+    // Vi använder pekararitmetik för att peka direkt in i Font20-tabellen
+    load_info->Source_Buffer_Addr = (UBYTE *)&Font20.table[offset];
+
+    // Vi behåller formatinställningar här för att hålla render-funktionen ren
+    load_info->Pixel_Format = IT8951_3BPP;
+    load_info->Endian_Type = IT8951_LDIMG_B_ENDIAN;
+    load_info->Rotate = IT8951_ROTATE_0;
+}
+
+char map_evdev_to_ascii(int code) {
+    // Exempel: evdev kod 30 = 'a', 31 = 's'
+    // Detta är en enkel mappning för teständamål
+    switch(code) {
+        case 30: return 'A'; // Hårdkodat för test
+        case 48: return 'B';
+        case 46: return 'C';
+        case 57: return ' ';
+        default: return 'x';
+    }
+}
+
+
+void render_char_fast(char c, int x, int y, UDOUBLE target_addr, IT8951_Load_Img_Info *load_info, IT8951_Area_Img_Info *area_info) {
+
+    UDOUBLE active_render_addr = 122480; // Testa hårdkodad address
+    int index = (c - ' ');
+    if (index < 0 || index > 95) return;
+
+    // Använd konfigurationen från prepare_char_bitmap, ändra bara målet
+    load_info->Target_Memory_Addr = target_addr;
+
+    printf("Renderar '%c' vid %d, %d\n", c, x, y);
+
+    area_info->Area_X = x;
+    area_info->Area_Y = y;
+    area_info->Area_W = Font20.Width;  // Skulle förmodligen vara 14...
+    area_info->Area_H = Font20.Height; // Är förmodligen 20...
+
+    static UBYTE debug_bitmap[40];
+    for(int i=0; i<40; i++) debug_bitmap[i] = 0xAA;
+
+    load_info->Source_Buffer_Addr = debug_bitmap;
+
+    // Skriv till kontrollern
+    EPD_IT8951_HostAreaPackedPixelWrite_1bp(load_info, area_info, false);
+
+    // Uppdatera skärmen
+    // EPD_IT8951_Display_AreaBuf(x, y, 16, 20, 2, target_addr);
+    EPD_IT8951_Display_AreaBuf(x, y, 16, 20, 2, active_render_addr);
+}
+
+int main() {
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    IT8951_Dev_Info Dev_Info;
+    IT8951_Load_Img_Info load_img_info;
+    IT8951_Area_Img_Info area_img_info;
+
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    printf("Modul initierad. Startar EPD...\n");
+
+    // Init-anrop
+    Dev_Info = EPD_IT8951_Init(2140);
+
+    // Häpmta adressen från den initierade strukturen
+    // Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
+
+    printf("Skärmstorlek: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+
+    UDOUBLE base_addr = ((UDOUBLE)Dev_Info.Memory_Addr_H << 16) | Dev_Info.Memory_Addr_L;
+
+    // Testa
+    printf("Debug: Memory_Addr_L: %d\n", Dev_Info.Memory_Addr_L);
+    printf("Debug: Memory_Addr_H: %d\n", Dev_Info.Memory_Addr_H);
+
+    if (Dev_Info.Panel_W == 0) {
+        printf("VARNING: Ingen kontakt med skärmen! Panel_W är 0.\n");
+    } else {
+        printf("Kontakt upprättad. Panel: %d x %d\n", Dev_Info.Panel_W, Dev_Info.Panel_H);
+}
+
+    printf("Waveshares base_addr: %d\n", base_addr);
+    // Initial Clear
+    EPD_IT8951_Clear_Refresh(Dev_Info, base_addr, 0);
+
+    // Öppna input
+    int fd = open("/dev/input/event0", O_RDONLY);
+    if (fd == -1) return 1;
+
+    printf("Skrivmaskinen startad. Lyssnar på inmatning...\n");
+
+    struct input_event ev;
+    while (read(fd, &ev, sizeof(ev)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+
+            char current_char = map_evdev_to_ascii(ev.code);
+
+            printf("Tangent tryckt: kod %d\n", ev.code);
+
+            // Förbered glyfen
+            prepare_char_bitmap(current_char, &load_img_info);
+
+            //Skriv ut glyfen
+            render_char_fast(current_char, cursor_x, cursor_y, base_addr, &load_img_info, &area_img_info);
+
+            cursor_x += Font20.Width;
+
+            if(cursor_x > (Dev_Info.Panel_W - Font20.Width)) {
+                cursor_x = 100;
+                cursor_y += Font20.Height;
+            }
+        }
+    }
+
+    close(fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/old_0721_main.c ==========
+
+========== BÖRJAN PÅ: ./archive/teckentabell.c ==========
+#include <stdlib.h>
+#include <stdio.h>
+#include "DEV_Config.h"
+#include "IT8951.h"
+#include "GUI_Paint.h"
+#include "fonts.h"
+
+// GCC för att bygga detta exempel:
+// gcc -O3 -Wall -g -D BCM -I. -I./lib/Config -I./lib/e-Paper -I./lib/Fonts -I./lib/GUI main.c ./lib/Config/DEV_Config.c ./lib/GUI/GUI_Paint.c ./lib/e-Paper/EPD_IT8951.c ./lib/Fonts/font24.c -o wimwriter -lbcm2835 -lpthread -lmgcc main.c IT8951.c DEV_Config.c GUI_Paint.c -o font_test -I. -lbcm2835 -lpthread -D BCM
+
+int main(int argc, char *argv[])
+{
+    // 1. Initiera hårdvara och IT8951-kontroller
+    if (DEV_Module_Init() != 0) {
+        return -1;
+    }
+
+    UDOUBLE Vcom = 2140;
+    IT8951_Init(Vcom);
+
+    // 2. Allokera minne för den virtuella framebufferten i RAM
+    UWORD Imagesize = ((IT8951_Width % 8 == 0) ? (IT8951_Width / 8) : (IT8951_Width / 8 + 1)) * IT8951_Height;
+    UBYTE *BlackImage = (UBYTE *)malloc(Imagesize);
+    if (BlackImage == NULL) {
+        perror("Kunde inte allokera bildbuffert");
+        return -1;
+    }
+
+    // Skapa bildkontext och fyll med vitt
+    Paint_NewImage(BlackImage, IT8951_Width, IT8951_Height, 0, WHITE);
+    Paint_Clear(WHITE);
+
+    // 3. Konfigurera teckensnitt och padding (4 pixlar)
+    sFONT *font = &Font24;
+    UBYTE padding = 4;
+
+    UWORD cell_w = font->Width + (padding * 2);
+    UWORD cell_h = font->Height + (padding * 2);
+
+    UDOUBLE x = 10;
+    UDOUBLE y = 10;
+
+    // 4. Rita ut teckentabellen (ASCII 32 till 126)
+    for (int i = 32; i < 127; i++) {
+        // Kontrollera radbyte om vi når skärmens kant
+        if (x + cell_w > IT8951_Width - 10) {
+            x = 10;
+            y += cell_h;
+        }
+        if (y + cell_h > IT8951_Height - 10) {
+            break;
+        }
+
+        // Rita tecknet med 4 pixlars offset för padding
+        Paint_DrawChar(x + padding, y + padding, i, font, WHITE, BLACK);
+
+        x += cell_w;
+    }
+
+    // 5. Skicka hela bufferten till IT8951 för visning
+    IT8951_Display_Frame(BlackImage, 0, 0, IT8951_Width, IT8951_Height, INIT_Mode);
+
+    // 6. Städa upp resurser
+    free(BlackImage);
+    DEV_Module_Exit();
+
+    return 0;
+}
+
+========== SLUT PÅ: ./archive/teckentabell.c ==========
+
 ========== BÖRJAN PÅ: ./main.c ==========
 #include <stdio.h>
 #include <stdlib.h>
@@ -424,12 +1877,13 @@ int main() {
                 // Hämta tecken från tabell
                 char c = keyboard_get_char(&ev);
 
+                switch (c) {
+                    case '\n': // Enter
+                        cursor_col = 0;
+                        cursor_row++;
+                        break;
 
-                if (c == '\n') { //Enter
-                    cursor_col = 0;
-                    cursor_row++;
-                }
-                else if (c == 127) { // Backspace
+                    case 127: // Backspace
                     cursor_col--;
                         if (cursor_col < 0) {
                             if (cursor_row > 0) {
@@ -442,22 +1896,26 @@ int main() {
                         // Overwrite buffer and screen with ' '
                         text_buffer[cursor_row][cursor_col] = ' ';
                         render_char(' ', get_physical_x(cursor_col), get_physical_y(cursor_row), target_addr);
+                        break;
+
+                    default:
+                        if (c > 0) { // Regular chars
+                            int px = get_physical_x(cursor_col);
+                            int py = get_physical_y(cursor_row);
+
+                            text_buffer[cursor_row][cursor_col] = c;
+                            render_char(c, px, py, target_addr);
+
+                            cursor_col++;
+
+                            // Word wrapping
+                            if (cursor_col >= MAX_COLS) {
+                                word_wrap(text_buffer, &cursor_row, &cursor_col, target_addr);
+                            }
+                        }
+                        break;
                 }
-                else if (c > 0) { // Regular chars
-                    int px = get_physical_x(cursor_col);
-                    int py = get_physical_y(cursor_row);
 
-                    text_buffer[cursor_row][cursor_col] = c;
-                    render_char(c, px, py, target_addr);
-
-                    cursor_col++;
-
-                    // Word wrapping
-                    if (cursor_col >= MAX_COLS) {
-                        cursor_col = 0;
-                        cursor_row++;
-                    }
-                }
 
                 // Jump mechanism
                 if (cursor_row >= MAX_ROWS) {
@@ -473,4 +1931,1437 @@ int main() {
 }
 
 ========== SLUT PÅ: ./main.c ==========
+
+========== BÖRJAN PÅ: ./examples/example.h ==========
+#ifndef __EXAMPLE__
+#define __EXAMPLE__
+
+#include "../lib/e-Paper/EPD_IT8951.h"
+#include "../lib/Config/DEV_Config.h"
+
+
+// 1 bit per pixel, which is 2 grayscale
+#define BitsPerPixel_1 1
+// 2 bit per pixel, which is 4 grayscale 
+#define BitsPerPixel_2 2
+// 4 bit per pixel, which is 16 grayscale
+#define BitsPerPixel_4 4
+// 8 bit per pixel, which is 256 grayscale, but will automatically reduce by hardware to 4bpp, which is 16 grayscale
+#define BitsPerPixel_8 8
+
+
+//For all refresh fram buf except touch panel
+extern UBYTE *Refresh_Frame_Buf;
+
+//Only for touch panel
+extern UBYTE *Panel_Frame_Buf;
+extern UBYTE *Panel_Area_Frame_Buf;
+
+extern bool Four_Byte_Align;
+
+UBYTE Display_ColorPalette_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr);
+
+UBYTE Display_CharacterPattern_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr, UBYTE BitsPerPixel);
+
+UBYTE Display_BMP_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr, UBYTE BitsPerPixel);
+
+UBYTE Dynamic_Refresh_Example(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr);
+
+UBYTE Dynamic_GIF_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr);
+
+UBYTE Check_FrameRate_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Target_Memory_Addr, UBYTE BitsPerPixel);
+
+UBYTE TouchPanel_ePaper_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr);
+
+void Factory_Test_Only(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr);
+void Color_Test(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr);
+
+#endif
+
+========== SLUT PÅ: ./examples/example.h ==========
+
+========== BÖRJAN PÅ: ./examples/example.c ==========
+#include "example.h"
+
+#include <time.h> 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdlib.h>
+
+#include "../lib/e-Paper/EPD_IT8951.h"
+#include "../lib/GUI/GUI_Paint.h"
+#include "../lib/GUI/GUI_BMPfile.h"
+#include "../lib/Config/Debug.h"
+
+UBYTE *Refresh_Frame_Buf = NULL;
+
+UBYTE *Panel_Frame_Buf = NULL;
+UBYTE *Panel_Area_Frame_Buf = NULL;
+
+bool Four_Byte_Align = false;
+
+extern int epd_mode;
+extern UWORD VCOM;
+extern UBYTE isColor;
+/******************************************************************************
+function: Change direction of display, Called after Paint_NewImage()
+parameter:
+    mode: display mode
+******************************************************************************/
+static void Epd_Mode(int mode)
+{
+	if(mode == 3) {
+		Paint_SetRotate(ROTATE_0);
+		Paint_SetMirroring(MIRROR_NONE);
+		isColor = 1;
+	}else if(mode == 2) {
+		Paint_SetRotate(ROTATE_0);
+		Paint_SetMirroring(MIRROR_HORIZONTAL);
+	}else if(mode == 1) {
+		Paint_SetRotate(ROTATE_0);
+		Paint_SetMirroring(MIRROR_HORIZONTAL);
+	}else {
+		Paint_SetRotate(ROTATE_0);
+		Paint_SetMirroring(MIRROR_NONE);
+	}
+}
+
+
+/******************************************************************************
+function: Display_ColorPalette_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+******************************************************************************/
+UBYTE Display_ColorPalette_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr){
+    UWORD In_4bp_Refresh_Area_Width;
+    if(Four_Byte_Align == true){
+        In_4bp_Refresh_Area_Width = Panel_Width - (Panel_Width % 32);
+    }else{
+        In_4bp_Refresh_Area_Width = Panel_Width;
+    }
+    UWORD In_4bp_Refresh_Area_Height = Panel_Height/16;
+
+    UDOUBLE Imagesize;
+
+    clock_t In_4bp_Refresh_Start, In_4bp_Refresh_Finish;
+    double In_4bp_Refresh_Duration;
+
+    Imagesize  = ((In_4bp_Refresh_Area_Width*4 % 8 == 0)? (In_4bp_Refresh_Area_Width*4 / 8 ): (In_4bp_Refresh_Area_Width*4 / 8 + 1)) * In_4bp_Refresh_Area_Height;
+
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for black memory...\r\n");
+        return -1;
+    }
+
+    Debug("Start to demostrate 4bpp palette example\r\n");
+    In_4bp_Refresh_Start = clock();
+
+    UBYTE SixteenColorPattern[16] = {0xFF,0xEE,0xDD,0xCC,0xBB,0xAA,0x99,0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x00};
+
+    for(int i=0; i < 16; i++){
+        memset(Refresh_Frame_Buf, SixteenColorPattern[i], Imagesize);
+        EPD_IT8951_4bp_Refresh(Refresh_Frame_Buf, 0, i * In_4bp_Refresh_Area_Height, In_4bp_Refresh_Area_Width, In_4bp_Refresh_Area_Height, false, Init_Target_Memory_Addr, false);
+    }
+
+    In_4bp_Refresh_Finish = clock();
+    In_4bp_Refresh_Duration = (double)(In_4bp_Refresh_Finish - In_4bp_Refresh_Start) / CLOCKS_PER_SEC;
+    Debug( "Write and Show 4bp occupy %f second\n", In_4bp_Refresh_Duration );
+
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+    return 0;
+}
+
+
+/******************************************************************************
+function: Display_CharacterPattern_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+    BitsPerPixel: Bits Per Pixel, 2^BitsPerPixel = grayscale
+******************************************************************************/
+UBYTE Display_CharacterPattern_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr, UBYTE BitsPerPixel){
+    UWORD Display_Area_Width;
+    if(Four_Byte_Align == true){
+        Display_Area_Width = Panel_Width - (Panel_Width % 32);
+    }else{
+        Display_Area_Width = Panel_Width;
+    }
+    UWORD Display_Area_Height = Panel_Height;
+
+    UWORD Display_Area_Sub_Width = Display_Area_Width / 5;
+    UWORD Display_Area_Sub_Height = Display_Area_Height / 5;
+
+    UDOUBLE Imagesize;
+
+    Imagesize = ((Display_Area_Width * BitsPerPixel % 8 == 0)? (Display_Area_Width * BitsPerPixel / 8 ): (Display_Area_Width * BitsPerPixel / 8 + 1)) * Display_Area_Height;
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for image memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Refresh_Frame_Buf, Display_Area_Width, Display_Area_Height, 0, BLACK);
+    Paint_SelectImage(Refresh_Frame_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(BitsPerPixel);
+    Paint_Clear(WHITE);
+    
+
+    for(int y=20; y<Display_Area_Height - Display_Area_Sub_Height; y += Display_Area_Sub_Height )//To prevent arrays from going out of bounds
+    {
+        for(int  x=20; x<Display_Area_Width - Display_Area_Sub_Width; x += Display_Area_Sub_Width )//To prevent arrays from going out of bounds
+        {
+            //For color definition of all BitsPerPixel, you can refer to GUI_Paint.h
+            Paint_DrawPoint(x+Display_Area_Sub_Width*3/8, y+Display_Area_Sub_Height*3/8, 0x10, DOT_PIXEL_7X7, DOT_STYLE_DFT);
+            Paint_DrawPoint(x+Display_Area_Sub_Width*5/8, y+Display_Area_Sub_Height*3/8, 0x30, DOT_PIXEL_7X7, DOT_STYLE_DFT);
+            Paint_DrawLine(x+Display_Area_Sub_Width*3/8, y+Display_Area_Sub_Height*5/8, x+Display_Area_Sub_Width*5/8, y+Display_Area_Sub_Height*5/8, 0x50, DOT_PIXEL_3X3, LINE_STYLE_SOLID);
+            Paint_DrawRectangle(x, y, x+Display_Area_Sub_Width, y+Display_Area_Sub_Height, 0x00, DOT_PIXEL_3X3, DRAW_FILL_EMPTY);
+            Paint_DrawCircle(x + Display_Area_Sub_Width/2, y + Display_Area_Sub_Height/2, Display_Area_Sub_Height/2, 0x50, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
+            Paint_DrawNum(x+Display_Area_Sub_Width*3/10, y+Display_Area_Sub_Height*1/4, 1234567890, &Font16, 0x20, 0xE0);
+            Paint_DrawString_EN(x+Display_Area_Sub_Width*3/10, y+Display_Area_Sub_Height*3/4, "hello world", &Font16, 0x30, 0xD0);
+        }
+    }
+
+
+    switch(BitsPerPixel){
+        case BitsPerPixel_8:{
+            EPD_IT8951_8bp_Refresh(Refresh_Frame_Buf, 0, 0, Display_Area_Width,  Display_Area_Height, false, Init_Target_Memory_Addr);
+            break;
+        }
+        case BitsPerPixel_4:{
+            EPD_IT8951_4bp_Refresh(Refresh_Frame_Buf, 0, 0, Display_Area_Width,  Display_Area_Height, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_2:{
+            EPD_IT8951_2bp_Refresh(Refresh_Frame_Buf, 0, 0, Display_Area_Width,  Display_Area_Height, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_1:{
+            EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, 0, 0, Display_Area_Width,  Display_Area_Height, A2_Mode, Init_Target_Memory_Addr,false);
+            break;
+        }
+    }
+
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+
+    return 0;
+}
+
+
+
+/******************************************************************************
+function: Display_BMP_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+    BitsPerPixel: Bits Per Pixel, 2^BitsPerPixel = grayscale
+******************************************************************************/
+UBYTE Display_BMP_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr, UBYTE BitsPerPixel){
+    UWORD WIDTH;
+    if(Four_Byte_Align == true){
+        WIDTH  = Panel_Width - (Panel_Width % 32);
+    }else{
+        WIDTH = Panel_Width;
+    }
+    UWORD HEIGHT = Panel_Height;
+
+    UDOUBLE Imagesize;
+
+    Imagesize = ((WIDTH * BitsPerPixel % 8 == 0)? (WIDTH * BitsPerPixel / 8 ): (WIDTH * BitsPerPixel / 8 + 1)) * HEIGHT;
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for black memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Refresh_Frame_Buf, WIDTH, HEIGHT, 0, BLACK);
+    Paint_SelectImage(Refresh_Frame_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(BitsPerPixel);
+    Paint_Clear(WHITE);
+
+    char Path[30];
+    sprintf(Path,"./pic/%dx%d_0.bmp", WIDTH, HEIGHT);
+
+    GUI_ReadBmp(Path, 0, 0);
+
+    //you can draw your character and pattern on the image, for color definition of all BitsPerPixel, you can refer to GUI_Paint.h, 
+    //Paint_DrawRectangle(50, 50, WIDTH/2, HEIGHT/2, 0x30, DOT_PIXEL_3X3, DRAW_FILL_EMPTY);
+    //Paint_DrawCircle(WIDTH*3/4, HEIGHT/4, 100, 0xF0, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
+    //Paint_DrawNum(WIDTH/4, HEIGHT/5, 709, &Font20, 0x30, 0xB0);
+
+    switch(BitsPerPixel){
+        case BitsPerPixel_8:{
+            Paint_DrawString_EN(10, 10, "8 bits per pixel 16 grayscale", &Font24, 0xF0, 0x00);
+            EPD_IT8951_8bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr);
+            break;
+        }
+        case BitsPerPixel_4:{
+            Paint_DrawString_EN(10, 10, "4 bits per pixel 16 grayscale", &Font24, 0xF0, 0x00);
+            EPD_IT8951_4bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_2:{
+            Paint_DrawString_EN(10, 10, "2 bits per pixel 4 grayscale", &Font24, 0xC0, 0x00);
+            EPD_IT8951_2bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_1:{
+            Paint_DrawString_EN(10, 10, "1 bit per pixel 2 grayscale", &Font24, 0x80, 0x00);
+            EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, A2_Mode, Init_Target_Memory_Addr,false);
+            break;
+        }
+    }
+
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+
+    DEV_Delay_ms(5000);
+
+    return 0;
+}
+
+
+/******************************************************************************
+function: Dynamic_Refresh_Example
+parameter:
+    Dev_Info: Information structure read from IT8951
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+******************************************************************************/
+UBYTE Dynamic_Refresh_Example(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr){
+    UWORD Panel_Width = Dev_Info.Panel_W;
+    UWORD Panel_Height = Dev_Info.Panel_H;
+
+    UWORD Dynamic_Area_Width = 96;
+    UWORD Dynamic_Area_Height = 48;
+
+    UDOUBLE Imagesize;
+
+    UWORD Start_X = 0,Start_Y = 0;
+
+    UWORD Dynamic_Area_Count = 0;
+
+    UWORD Repeat_Area_Times = 0;
+
+    //malloc enough memory for 1bp picture first
+    Imagesize = ((Panel_Width * 1 % 8 == 0)? (Panel_Width * 1 / 8 ): (Panel_Width * 1 / 8 + 1)) * Panel_Height;
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL){
+        Debug("Failed to apply for picture memory...\r\n");
+        return -1;
+    }
+
+    clock_t Dynamic_Area_Start, Dynamic_Area_Finish;
+    double Dynamic_Area_Duration;  
+
+    while(1)
+    {
+        Dynamic_Area_Width = 128;
+        Dynamic_Area_Height = 96;
+
+        Start_X = 0;
+        Start_Y = 0;
+
+        Dynamic_Area_Count = 0;
+
+        Dynamic_Area_Start = clock();
+        Debug("Start to dynamic display...\r\n");
+
+        for(Dynamic_Area_Width = 96, Dynamic_Area_Height = 64; (Dynamic_Area_Width < Panel_Width - 32) && (Dynamic_Area_Height < Panel_Height - 24); Dynamic_Area_Width += 32, Dynamic_Area_Height += 24)
+        {
+
+            Imagesize = ((Dynamic_Area_Width % 8 == 0)? (Dynamic_Area_Width / 8 ): (Dynamic_Area_Width / 8 + 1)) * Dynamic_Area_Height;
+            Paint_NewImage(Refresh_Frame_Buf, Dynamic_Area_Width, Dynamic_Area_Height, 0, BLACK);
+            Paint_SelectImage(Refresh_Frame_Buf);
+			Epd_Mode(epd_mode);
+            Paint_SetBitsPerPixel(1);
+
+           for(int y=Start_Y; y< Panel_Height - Dynamic_Area_Height; y += Dynamic_Area_Height)
+            {
+                for(int x=Start_X; x< Panel_Width - Dynamic_Area_Width; x += Dynamic_Area_Width)
+                {
+                    Paint_Clear(WHITE);
+
+                    //For color definition of all BitsPerPixel, you can refer to GUI_Paint.h
+                    Paint_DrawRectangle(0, 0, Dynamic_Area_Width-1, Dynamic_Area_Height, 0x00, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
+
+                    Paint_DrawCircle(Dynamic_Area_Width*3/4, Dynamic_Area_Height*3/4, 5, 0x00, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+
+                    Paint_DrawNum(Dynamic_Area_Width/4, Dynamic_Area_Height/4, ++Dynamic_Area_Count, &Font20, 0x00, 0xF0);
+
+					if(epd_mode == 2)
+						EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, 1280-Dynamic_Area_Width-x, y, Dynamic_Area_Width,  Dynamic_Area_Height, A2_Mode, Init_Target_Memory_Addr, true);
+					else if(epd_mode == 1)
+						EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, Panel_Width-Dynamic_Area_Width-x-16, y, Dynamic_Area_Width,  Dynamic_Area_Height, A2_Mode, Init_Target_Memory_Addr, true);
+                    else
+						EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, x, y, Dynamic_Area_Width,  Dynamic_Area_Height, A2_Mode, Init_Target_Memory_Addr, true);
+                }
+            }
+            Start_X += 32;
+            Start_Y += 24;
+        }
+
+        Dynamic_Area_Finish = clock();
+        Dynamic_Area_Duration = (double)(Dynamic_Area_Finish - Dynamic_Area_Start) / CLOCKS_PER_SEC;
+        Debug( "Write and Show occupy %f second\n", Dynamic_Area_Duration );
+
+        Repeat_Area_Times ++;
+        if(Repeat_Area_Times > 0){
+            break;
+        }
+    }
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+
+    return 0;
+}
+
+
+/******************************************************************************
+function: Dynamic_GIF_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+    BitsPerPixel: Bits Per Pixel, 2^BitsPerPixel = grayscale
+******************************************************************************/
+UBYTE Dynamic_GIF_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr){
+
+    UWORD Animation_Start_X = 0;
+    UWORD Animation_Start_Y = 0;
+    UWORD Animation_Area_Width = 800;
+    UWORD Animation_Area_Height = 600;
+
+    if(Animation_Area_Width > Panel_Width){
+        return -1;
+    }
+    if(Animation_Area_Height > Panel_Height){
+        return -1;
+    }
+
+    UDOUBLE Imagesize;
+
+    UBYTE Pic_Count = 0;
+    UBYTE Pic_Num = 7;
+    char Path[30];
+
+    UDOUBLE Basical_Memory_Addr = Init_Target_Memory_Addr;
+
+    UDOUBLE Target_Memory_Addr = Basical_Memory_Addr;
+    UWORD Repeat_Animation_Times = 0;
+
+    clock_t Animation_Test_Start, Animation_Test_Finish;
+    double Animation_Test_Duration;
+
+    Imagesize = ((Animation_Area_Width * 1 % 8 == 0)? (Animation_Area_Width * 1 / 8 ): (Animation_Area_Width * 1 / 8 + 1)) * Animation_Area_Height;
+
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL){
+        Debug("Failed to apply for image memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Refresh_Frame_Buf, Animation_Area_Width, Animation_Area_Height, 0, BLACK);
+    Paint_SelectImage(Refresh_Frame_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(1);
+
+    Debug("Start to write a animation\r\n");
+    Animation_Test_Start = clock();
+    for(int i=0; i < Pic_Num; i += 1){
+        Paint_Clear(WHITE);
+        sprintf(Path,"./pic/800x600_gif_%d.bmp",Pic_Count++);
+        GUI_ReadBmp(Path, 0, 0);
+        //For color definition of all BitsPerPixel, you can refer to GUI_Paint.h
+        Paint_DrawNum(10, 10, i+1, &Font16, 0x00, 0xF0);
+		if(epd_mode == 2)
+			EPD_IT8951_1bp_Multi_Frame_Write(Refresh_Frame_Buf, 1280-Animation_Area_Width+Animation_Start_X, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr,false);
+        else if(epd_mode == 1)
+			EPD_IT8951_1bp_Multi_Frame_Write(Refresh_Frame_Buf, Panel_Width-Animation_Area_Width+Animation_Start_X-16, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr,false);
+		else
+			EPD_IT8951_1bp_Multi_Frame_Write(Refresh_Frame_Buf, Animation_Start_X, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr,false);
+        Target_Memory_Addr += Imagesize;
+    }
+
+    Animation_Test_Finish = clock();
+    Animation_Test_Duration = (double)(Animation_Test_Finish - Animation_Test_Start) / CLOCKS_PER_SEC;
+	Debug( "Write all frame occupy %f second\r\n", Animation_Test_Duration);
+
+    Target_Memory_Addr = Basical_Memory_Addr;
+
+    while(1){
+        Debug("Start to show a animation\r\n");
+        Animation_Test_Start = clock();
+
+        for(int i=0; i< Pic_Num; i += 1){
+			if(epd_mode == 2)
+				EPD_IT8951_1bp_Multi_Frame_Refresh(Panel_Width-Animation_Area_Width+Animation_Start_X, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr);
+			else if(epd_mode == 1)
+				EPD_IT8951_1bp_Multi_Frame_Refresh(Panel_Width-Animation_Area_Width+Animation_Start_X-16, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr);
+            else
+				EPD_IT8951_1bp_Multi_Frame_Refresh(Animation_Start_X, Animation_Start_Y, Animation_Area_Width,  Animation_Area_Height, Target_Memory_Addr);
+            Target_Memory_Addr += Imagesize;
+        }
+        Target_Memory_Addr = Basical_Memory_Addr;
+
+        Animation_Test_Finish = clock();
+        Animation_Test_Duration = (double)(Animation_Test_Finish - Animation_Test_Start) / CLOCKS_PER_SEC;
+        Debug( "Show all frame occupy %f second\r\n", Animation_Test_Duration );
+   		Debug( "The frame rate is: %lf fps\r\n", Pic_Num/Animation_Test_Duration);
+
+        Repeat_Animation_Times ++;
+        if(Repeat_Animation_Times >15){
+            break;
+        }
+    }
+
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+
+    return 0;
+}
+
+
+
+/******************************************************************************
+function: Check_FrameRate_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+    BitsPerPixel: Bits Per Pixel, 2^BitsPerPixel = grayscale
+******************************************************************************/
+UBYTE Check_FrameRate_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Target_Memory_Addr, UBYTE BitsPerPixel){
+    UWORD Frame_Rate_Test_Width;
+    if(Four_Byte_Align == true){
+        Frame_Rate_Test_Width = Panel_Width - (Panel_Width % 32);
+    }else{
+        Frame_Rate_Test_Width = Panel_Width;
+    }
+    UWORD Frame_Rate_Test_Height = Panel_Height;
+    UDOUBLE Imagesize;
+
+    UBYTE *Refresh_FrameRate_Buf = NULL;
+
+    UBYTE Count = 0;
+
+    clock_t Frame_Rate_Test_Start, Frame_Rate_Test_Finish;
+    double Frame_Rate_Test_Duration;
+
+    Imagesize = ((Frame_Rate_Test_Width * BitsPerPixel % 8 == 0)? (Frame_Rate_Test_Width * BitsPerPixel / 8 ): (Frame_Rate_Test_Width * BitsPerPixel / 8 + 1)) * Frame_Rate_Test_Height;
+
+    if((Refresh_FrameRate_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for image memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Refresh_FrameRate_Buf, Frame_Rate_Test_Width, Frame_Rate_Test_Height, 0, BLACK);
+    Paint_SelectImage(Refresh_FrameRate_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(BitsPerPixel);
+
+    Debug("Start to test Frame Rate\r\n");
+    Frame_Rate_Test_Start = clock();
+
+    for(int i=0; i<10; i++){
+
+        Paint_Clear(WHITE);
+        //For color definition of all BitsPerPixel, you can refer to GUI_Paint.h
+        Paint_DrawRectangle(20, 20, Frame_Rate_Test_Width-20, Frame_Rate_Test_Height-20, 0x00, DOT_PIXEL_4X4, DRAW_FILL_EMPTY);//To prevent arrays from going out of bounds
+        Paint_DrawNum(Frame_Rate_Test_Width/2, Frame_Rate_Test_Height/2, ++Count, &Font24, 0x00, 0xF0);
+        Paint_DrawString_EN(Frame_Rate_Test_Width/2, Frame_Rate_Test_Height/4, "frame rate test", &Font20, 0xF0, 0x00);
+        Paint_DrawString_EN(Frame_Rate_Test_Width/2, Frame_Rate_Test_Height*3/4, "frame rate test", &Font20, 0xF0, 0x00);
+
+        switch(BitsPerPixel){
+            case 8:{
+				if(epd_mode == 2)
+					EPD_IT8951_8bp_Refresh(Refresh_FrameRate_Buf, 1280-Frame_Rate_Test_Width, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr);
+				else if(epd_mode == 1)
+					EPD_IT8951_8bp_Refresh(Refresh_FrameRate_Buf, 1872-Frame_Rate_Test_Width-16, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr);
+				else					
+					EPD_IT8951_8bp_Refresh(Refresh_FrameRate_Buf, 0, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr);
+                break;
+            }
+            case 4:{
+				if(epd_mode == 2)
+					EPD_IT8951_4bp_Refresh(Refresh_FrameRate_Buf, 1280-Frame_Rate_Test_Width, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+				else if(epd_mode == 1)
+					EPD_IT8951_4bp_Refresh(Refresh_FrameRate_Buf, 1872-Frame_Rate_Test_Width-16, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+				else
+					EPD_IT8951_4bp_Refresh(Refresh_FrameRate_Buf, 0, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+                break;
+            }
+            case 2:{
+				if(epd_mode == 2)
+					EPD_IT8951_2bp_Refresh(Refresh_FrameRate_Buf, 1280-Frame_Rate_Test_Width, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+				else if(epd_mode == 1)
+					EPD_IT8951_2bp_Refresh(Refresh_FrameRate_Buf, 1872-Frame_Rate_Test_Width-16, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+				else	
+					EPD_IT8951_2bp_Refresh(Refresh_FrameRate_Buf, 0, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, false, Target_Memory_Addr,false);
+                break;
+            }
+            case 1:{
+				if(epd_mode == 2)
+					EPD_IT8951_1bp_Refresh(Refresh_FrameRate_Buf, 1280-Frame_Rate_Test_Width, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, A2_Mode, Target_Memory_Addr,false);
+				else if(epd_mode == 1)
+					EPD_IT8951_1bp_Refresh(Refresh_FrameRate_Buf, 1872-Frame_Rate_Test_Width-16, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, A2_Mode, Target_Memory_Addr,false);
+				else	
+					EPD_IT8951_1bp_Refresh(Refresh_FrameRate_Buf, 0, 0, Frame_Rate_Test_Width,  Frame_Rate_Test_Height, A2_Mode, Target_Memory_Addr,false);
+                break;
+            }
+        }
+    }
+
+    Frame_Rate_Test_Finish = clock();
+    Frame_Rate_Test_Duration = (double)(Frame_Rate_Test_Finish - Frame_Rate_Test_Start) / CLOCKS_PER_SEC;
+	Debug( "Write and Show 10 Frame occupy %f second\r\n", Frame_Rate_Test_Duration);
+    Debug( "The frame rate is: %lf fps\r\n", 10/Frame_Rate_Test_Duration);
+
+    if(Refresh_FrameRate_Buf != NULL){
+        free(Refresh_FrameRate_Buf);
+        Refresh_FrameRate_Buf = NULL;
+    }
+
+    return 0;
+}
+
+/******************************************************************************
+function: TouchPanel_ePaper_Example
+parameter:
+    Panel_Width: Width of the panel
+    Panel_Height: Height of the panel
+    Init_Target_Memory_Addr: Memory address of IT8951 target memory address
+******************************************************************************/
+UBYTE TouchPanel_ePaper_Example(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr){
+    int ret,fd;
+    UWORD Touch_Pannel_Area_Width;
+    if(Four_Byte_Align == true){
+        Touch_Pannel_Area_Width = Panel_Width - (Panel_Width % 32);
+    }else{
+        Touch_Pannel_Area_Width = Panel_Width;
+    }
+    UWORD Touch_Pannel_Area_Height = Panel_Height;
+
+    UDOUBLE Imagesize;
+
+    UWORD Touch_Point0[2];
+    UWORD Touch_X = 0,Touch_Y = 0;
+    UWORD Touch_X_Old = 0,Touch_Y_Old = 0;
+
+    UWORD Min_X = Panel_Width, Max_X = 0;
+    UWORD Min_Y = Panel_Height, Max_Y = 0;
+
+    UWORD X_Start, X_End, Y_Start, Y_End, Width, Height;
+
+    UBYTE First_Point_Flag = 1;
+
+    UWORD Panel_Frame_Buf_WidthByte;
+    UWORD Panel_Area_Frame_Buf_WidthByte;
+
+	if(access("/home/pi/FIFO",F_OK)){
+		ret = mkfifo("/home/pi/FIFO",0777);
+		if(ret == -1){
+			Debug("mkfifo error!\n");
+			exit(0);
+		}
+	}
+    fd = open("/home/pi/FIFO",O_RDWR|O_NONBLOCK);
+    if( fd == -1 )
+    {
+        Debug("Open error\r\n");
+        exit(0);
+    }
+
+    Panel_Frame_Buf_WidthByte =  (Touch_Pannel_Area_Width * 1 % 8 == 0) ? (Touch_Pannel_Area_Width * 1 / 8 ): (Touch_Pannel_Area_Width * 1 / 8 + 1);
+
+    Imagesize = ((Touch_Pannel_Area_Width * 1 % 8 == 0) ? (Touch_Pannel_Area_Width * 1 / 8 ): (Touch_Pannel_Area_Width *1 / 8 + 1)) * Touch_Pannel_Area_Height;
+
+    if((Panel_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for Panel_Frame_Buf memory...\r\n");
+        return -1;
+    }
+
+    //Assume the entire screen is refreshed
+    if((Panel_Area_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for Panel_Area_Frame_Buf memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Panel_Frame_Buf, Touch_Pannel_Area_Width, Touch_Pannel_Area_Height, 0, BLACK);
+    Paint_SelectImage(Panel_Frame_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(1);
+    Paint_Clear(WHITE);
+
+    while(1)
+    {
+        Min_X = Panel_Width;
+        Max_X = 0;
+        Min_Y = Panel_Height;
+        Max_Y = 0;
+
+        First_Point_Flag = 1;
+
+        ret = read(fd,Touch_Point0,sizeof(Touch_Point0));
+
+        //Prepare the image
+        while(ret == 4){
+            Touch_X = Touch_Point0[0];
+            Touch_Y = Touch_Point0[1];
+            Paint_NewImage(Panel_Frame_Buf, Touch_Pannel_Area_Width, Touch_Pannel_Area_Height, 0, BLACK);
+            Paint_SelectImage(Panel_Frame_Buf);
+            Paint_SetBitsPerPixel(1);
+
+            if(First_Point_Flag == 0)
+            {
+                //For color definition of all BitsPerPixel, you can refer to GUI_Paint.h
+                Paint_DrawLine(Touch_X_Old, Touch_Y_Old, Touch_X, Touch_Y, 0x00, DOT_PIXEL_3X3, LINE_STYLE_SOLID);
+            }
+            Touch_X_Old = Touch_X;
+            Touch_Y_Old = Touch_Y;
+            First_Point_Flag = 0;
+
+            if(Touch_X < Min_X){
+                Min_X = Touch_X;
+            }
+            if(Touch_X > Max_X){
+                Max_X = Touch_X;
+            }
+            if(Touch_Y < Min_Y){
+                Min_Y = Touch_Y;
+            }
+            if(Touch_Y > Max_Y){
+                Max_Y = Touch_Y;
+            }
+
+            DEV_Delay_ms(15);
+
+            Debug("Touch_X:%d\r\n",Touch_X);
+            Debug("Touch_Y:%d\r\n",Touch_Y);
+            ret = read(fd,Touch_Point0,sizeof(Touch_Point0));
+            Debug("Stop ret:%d\r\n",ret);
+        }
+
+        //If Min < Max, then Indicates that there is a refresh area
+        if( (Min_X<Max_X)||(Min_Y<Max_Y) )
+        {
+            //----------Calculate Data, please be cautious that the width must be 32-bit aligned----------
+            Debug("Min_X - Max_X Output:%d~%d\r\n",Min_X,Max_X);
+            Debug("Min_Y - Max_Y Output:%d~%d\r\n",Min_Y,Max_Y);
+
+            X_Start = Min_X < 32 ? 0 : Min_X - (Min_X % 32);
+            Debug("X_Start:%d\r\n",X_Start);
+            X_End = ( Max_X + (32 - (Max_X % 32)) ) > Touch_Pannel_Area_Width ? ( Max_X - (Max_X % 32) )  : ( Max_X + (32 - (Max_X % 32)) );
+            Debug("X_End:%d\r\n",X_End);
+            Y_Start = Min_Y;
+            Debug("Y_Start:%d\r\n",Y_Start);
+            Y_End = Max_Y;
+            Debug("Y_Start:%d\r\n",Y_End);
+
+            Width = X_End - X_Start;
+            if(Width<=0){
+                Width = 32;
+            }
+            Debug("Width:%d\r\n",Width);
+            Height = Y_End-Y_Start;
+            if(Height<=0){
+                Height = 32;
+            }
+            Debug("Height:%d\r\n",Height);
+
+            //----------Prepare Image----------
+            Paint_NewImage(Panel_Area_Frame_Buf, Width, Height, 0, BLACK);
+            Paint_SelectImage(Panel_Area_Frame_Buf);
+			Epd_Mode(epd_mode);
+            Paint_Clear(WHITE);
+
+            Panel_Area_Frame_Buf_WidthByte = (Width % 8 == 0) ? (Width / 8 ): (Width / 8 + 1);
+
+            for(int y = 0; y< Height; y++){
+                memcpy(Panel_Area_Frame_Buf + (y * Panel_Area_Frame_Buf_WidthByte), Panel_Frame_Buf + ((Y_Start + y) * Panel_Frame_Buf_WidthByte) + X_Start/8 , Panel_Area_Frame_Buf_WidthByte);
+            }
+
+            //----------Display Image----------
+            EPD_IT8951_1bp_Refresh(Panel_Area_Frame_Buf, X_Start, Y_Start, Width,  Height, A2_Mode, Init_Target_Memory_Addr, true);
+        }
+    }
+
+    if( Panel_Area_Frame_Buf != NULL ){
+        free(Panel_Area_Frame_Buf);
+        Panel_Area_Frame_Buf = NULL;
+    }
+
+    if( Panel_Frame_Buf != NULL ){
+        free(Panel_Frame_Buf);
+        Panel_Frame_Buf = NULL;
+    }
+
+    return 0;
+}
+
+
+
+static UBYTE BMP_Test(UWORD Panel_Width, UWORD Panel_Height, UDOUBLE Init_Target_Memory_Addr, UBYTE BitsPerPixel, UBYTE Pic_Count)
+{
+    UWORD WIDTH;
+
+    if(Four_Byte_Align == true){
+        WIDTH  = Panel_Width - (Panel_Width % 32);
+    }else{
+        WIDTH = Panel_Width;
+    }
+    UWORD HEIGHT = Panel_Height;
+
+    UDOUBLE Imagesize;
+
+    Imagesize = ((WIDTH * BitsPerPixel % 8 == 0)? (WIDTH * BitsPerPixel / 8 ): (WIDTH * BitsPerPixel / 8 + 1)) * HEIGHT;
+    if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize)) == NULL) {
+        Debug("Failed to apply for black memory...\r\n");
+        return -1;
+    }
+
+    Paint_NewImage(Refresh_Frame_Buf, WIDTH, HEIGHT, 0, BLACK);
+    Paint_SelectImage(Refresh_Frame_Buf);
+	Epd_Mode(epd_mode);
+    Paint_SetBitsPerPixel(BitsPerPixel);
+    Paint_Clear(WHITE);
+
+
+	char Path[30];
+	sprintf(Path,"./pic/%dx%d_%d.bmp", WIDTH, HEIGHT, Pic_Count);
+	GUI_ReadBmp(Path, 0, 0);
+
+    switch(BitsPerPixel){
+        case BitsPerPixel_8:{
+            Paint_DrawString_EN(10, 10, "8 bits per pixel 16 grayscale", &Font24, 0xF0, 0x00);
+            EPD_IT8951_8bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr);
+            break;
+        }
+        case BitsPerPixel_4:{
+			Paint_DrawString_EN(10, 10, "4 bits per pixel 16 grayscale", &Font24, 0xF0, 0x00);
+            EPD_IT8951_4bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_2:{
+            Paint_DrawString_EN(10, 10, "2 bits per pixel 4 grayscale", &Font24, 0xC0, 0x00);
+            EPD_IT8951_2bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, false, Init_Target_Memory_Addr,false);
+            break;
+        }
+        case BitsPerPixel_1:{
+            Paint_DrawString_EN(10, 10, "1 bit per pixel 2 grayscale", &Font24, 0x80, 0x00);
+            EPD_IT8951_1bp_Refresh(Refresh_Frame_Buf, 0, 0, WIDTH,  HEIGHT, A2_Mode, Init_Target_Memory_Addr,false);
+            break;
+        }
+    }
+
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Refresh_Frame_Buf = NULL;
+    }
+
+    DEV_Delay_ms(5000);
+
+    return 0;
+}
+
+
+
+
+void Factory_Test_Only(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr)
+{
+    while(1)
+    {
+        for(int i=0; i < 4; i++){
+			EPD_IT8951_SystemRun();
+			
+			EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+            // BMP_Test(Dev_Info.Panel_W, Dev_Info.Panel_H, Init_Target_Memory_Addr, BitsPerPixel_1, i);
+            // BMP_Test(Dev_Info.Panel_W, Dev_Info.Panel_H, Init_Target_Memory_Addr, BitsPerPixel_2, i);
+            BMP_Test(Dev_Info.Panel_W, Dev_Info.Panel_H, Init_Target_Memory_Addr, BitsPerPixel_4, i);
+            // BMP_Test(Dev_Info.Panel_W, Dev_Info.Panel_H, Init_Target_Memory_Addr, BitsPerPixel_8, i);
+			EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+			
+			EPD_IT8951_Sleep();
+			DEV_Delay_ms(5000);
+        }
+		EPD_IT8951_SystemRun();
+		
+		EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+        Dynamic_Refresh_Example(Dev_Info,Init_Target_Memory_Addr);
+		EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+		
+		if(isColor) 
+			Color_Test(Dev_Info, Init_Target_Memory_Addr);
+		
+		EPD_IT8951_Sleep();
+		DEV_Delay_ms(5000);
+    }
+}
+
+void Color_Test(IT8951_Dev_Info Dev_Info, UDOUBLE Init_Target_Memory_Addr)
+{
+	PAINT_TIME Time = {2020, 9, 30, 18, 10, 34};
+	
+	while(1) 
+	{
+		UWORD Panel_Width = Dev_Info.Panel_W;
+		UWORD Panel_Height = Dev_Info.Panel_H;
+
+		UDOUBLE Imagesize;
+
+		//malloc enough memory for 1bp picture first
+		Imagesize = ((Panel_Width * 1 % 8 == 0)? (Panel_Width * 1 / 8 ): (Panel_Width * 1 / 8 + 1)) * Panel_Height;
+		if((Refresh_Frame_Buf = (UBYTE *)malloc(Imagesize*4)) == NULL) {
+			Debug("Failed to apply for picture memory...\r\n");
+		}
+
+		Paint_NewImage(Refresh_Frame_Buf, Panel_Width, Panel_Height, 0, BLACK);
+		Paint_SelectImage(Refresh_Frame_Buf);
+		Epd_Mode(epd_mode);
+		Paint_SetBitsPerPixel(4);
+		Paint_Clear(WHITE);
+
+		if(0) {
+			Paint_DrawRectangle(100, 100, 300, 300, 0x0f00, DOT_PIXEL_1X1, DRAW_FILL_FULL);	//Red
+			Paint_DrawRectangle(100, 400, 300, 600, 0x00f0, DOT_PIXEL_1X1, DRAW_FILL_FULL);	//Green
+			Paint_DrawRectangle(100, 700, 300, 900, 0x000f, DOT_PIXEL_1X1, DRAW_FILL_FULL);	//Bule
+			
+			Paint_DrawCircle(500, 200, 100, 0x00ff, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+			Paint_DrawCircle(500, 500, 100, 0x0f0f, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+			Paint_DrawCircle(500, 800, 100, 0x0ff0, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+			
+			Paint_DrawLine(1000, 200, 1100, 200, 0x055a, 10, LINE_STYLE_SOLID);
+			Paint_DrawLine(1000, 300, 1100, 300, 0x05a5, 20, LINE_STYLE_SOLID);
+			Paint_DrawLine(1000, 400, 1100, 400, 0x0a55, 30, LINE_STYLE_SOLID);
+
+			Paint_DrawString_EN(1000, 500, "Hello, World!", &Font24, 0x0aa5, 0x0fff);
+			Paint_DrawString_EN(1000, 600, "Hello, World!", &Font24, 0x0a5a, 0x0fff);
+			Paint_DrawString_EN(1000, 700, "Hello, World!", &Font24, 0x05aa, 0x0fff);
+
+			Paint_DrawString_CN(700, 400, "��� ΢ѩ����", &Font24CN, 0x00fa, 0x0000);
+			Paint_DrawNum(700, 500, 123456789, &Font24, 0x0a0f, 0x0fff);
+			Paint_DrawTime(700, 600, &Time, &Font24, 0x0fa0, 0x0fff);
+		}else {
+			for(UWORD j=0; j<14; j++) {
+				for(UWORD i=0; i<19; i++) {
+					Paint_DrawRectangle(i*72, j*72+1, (i+1)*72-1, (j+1)*72, (i+j*19)*15, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+				}
+			}
+		}
+
+		EPD_IT8951_4bp_Refresh(Refresh_Frame_Buf, 0, 0, Panel_Width,  Panel_Height, false, Init_Target_Memory_Addr, false);
+		
+		if(Refresh_Frame_Buf != NULL) {
+			free(Refresh_Frame_Buf);
+			Refresh_Frame_Buf = NULL;
+		}
+
+		DEV_Delay_ms(5000);
+		break;
+	}
+}
+
+========== SLUT PÅ: ./examples/example.c ==========
+
+========== BÖRJAN PÅ: ./examples/tests.c ==========
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#include "../lib/Config/DEV_Config.h"
+#include "../lib/e-Paper/EPD_IT8951.h"
+
+// Inställningar
+#define CHAR_W 12
+#define CHAR_H 20
+#define MODE 2 // DU_Mode
+
+int main() {
+    if (DEV_Module_Init() != 0) return -1;
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140);
+    UDOUBLE target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
+
+    EPD_IT8951_Clear_Refresh(dev_info, target_addr, GC16_Mode);
+
+    int kbd_fd = open("/dev/input/event0", O_RDONLY);
+    if (kbd_fd < 0) return -1;
+
+    int cursor_x = 0, cursor_y = 0;
+    struct input_event ev;
+    
+    // Buffert för en bokstav (12x20 pixlar)
+    int size = (CHAR_W * CHAR_H) / 8;
+    UBYTE *char_buf = (UBYTE *)calloc(1, size);
+    memset(char_buf, 0xFF, size); // Fyll med "svart" för test
+
+    printf("Skrivmaskin startad. Skriver till /dev/input/event0\n");
+
+    // Ersätt din loop i writer_test.c med detta för att testa adressering:
+for (int i = 0; i < 20; i++) { // En rad, 20 pixlar
+    buf[i] = 0xFF;
+}
+// Skicka endast en rad (h=1)
+EPD_IT8951_1bp_Refresh(buf, 100, 100, 20, 1, 2, target_addr, true);
+
+    free(char_buf);
+    close(kbd_fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./examples/tests.c ==========
+
+========== BÖRJAN PÅ: ./examples/writer_test.c ==========
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <stdbool.h>
+#include <string.h>
+#include "../lib/Fonts/fonts.h"
+
+// Include Waveshare hardware configuration and e-Paper drivers
+#include "../lib/Config/DEV_Config.h"
+#include "../lib/e-Paper/EPD_IT8951.h"
+
+int main(int argc, char *argv[]) {
+    // 1. Initialize hardware module and SPI communication
+    if (DEV_Module_Init() != 0) {
+        printf("Failed to initialize hardware module!\n");
+        return EXIT_FAILURE;
+    }
+
+    // Set VCOM manually (-2.14 V -> -2140 mV)
+    double vcom = -2.14;
+    UWORD vcom_mv = (UWORD)(vcom * -1000); 
+
+    printf("Initializing display with VCOM: -%.2f V (%d mV)...\n", -vcom, vcom_mv);
+    
+    // Get device info and apply VCOM settings
+    // This is where the program stops:
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(vcom_mv);
+    
+    // Calculate the full 32-bit target memory address in IT8951 VRAM
+    UDOUBLE target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
+
+    // Clear display to pure white (0xFF) using the high-quality GC16 mode at startup
+    printf("Clearing screen...\n");
+    EPD_IT8951_Clear_Refresh(dev_info, target_addr, GC16_Mode);
+
+    // 2. Open the keyboard input device (event0)
+    const char *kbd_dev = "/dev/input/event0";
+    int kbd_fd = open(kbd_dev, O_RDONLY);
+    if (kbd_fd == -1) {
+        perror("Failed to open keyboard device! Did you run with sudo?");
+        DEV_Module_Exit();
+        return EXIT_FAILURE;
+    }
+
+    printf("Display ready (%dx%d) and keyboard connected!\n", dev_info.Panel_W, dev_info.Panel_H);
+    printf("Type on the keyboard to test rendering (A, B, C, Å, Ä, Ö)...\n");
+    printf("Press Ctrl+C in terminal to exit.\n");
+
+    // Define initial typewriter cursor coordinates
+    int cursor_x = 100;
+    int cursor_y = 100;
+
+    struct input_event ev;
+
+    // Main keyboard event listener loop
+    while (read(kbd_fd, &ev, sizeof(struct input_event)) > 0) {
+        if (ev.type == EV_KEY && ev.value == 1) {
+                
+            int ascii_char = 32;
+                
+            // Keycode translation to custom font ASCII indexes
+            if (ev.code == 30) ascii_char = 'a'; 
+            else if (ev.code == 48) ascii_char = 'b'; 
+            else if (ev.code == 46) ascii_char = 'c'; 
+            else if (ev.code == 39) ascii_char = 131; // Custom mapping for Å
+            else if (ev.code == 40) ascii_char = 132; // Custom mapping for Ä
+            else if (ev.code == 43) ascii_char = 133; // Custom mapping for Ö
+            else ascii_char = 32; 
+
+            // Skip spaces or unmapped keys for this test
+            if (ascii_char == 32) {
+                continue;
+            }
+
+            printf("\n--- Rendering ASCII Char: %d ---\n", ascii_char);
+
+            // Allocate a 16-bit buffer. Since Width is 14, we need 14/2 = 7 UWORDs per row.
+            // Total size: (Width / 2) * Height
+            int words_per_row = Font20.Width / 2;
+            UWORD single_char_buf[words_per_row * Font20.Height];
+            
+            // Initialize buffer to pure white (0xFFFF means two white pixels side-by-side)
+            for (int i = 0; i < words_per_row * Font20.Height; i++) {
+                single_char_buf[i] = 0xFFFF;
+            }
+            
+            int cache_index = ascii_char - 32;
+            int bytes_per_char = ((Font20.Width + 7) / 8) * Font20.Height;
+            const UBYTE *ptr = &Font20.table[cache_index * bytes_per_char];
+
+            // Unpack font matrix bits into the packed 16-bit structure
+            for (int y = 0; y < Font20.Height; y++) {
+                UBYTE byte1 = ptr[y * 2];
+                UBYTE byte2 = ptr[y * 2 + 1];
+                unsigned int row_bits = (byte1 << 8) | byte2;
+
+                for (int x = 0; x < Font20.Width; x++) {
+                    if ((row_bits << x) & 0x8000) {
+                        int word_x = x / 2;
+                        int buf_idx = y * words_per_row + word_x;
+                        
+                        // Pack two 8-bit pixels into one 16-bit word based on even/odd column
+                        if (x % 2 == 0) {
+                            single_char_buf[buf_idx] &= 0xFF00; // Set low byte (pixel 1) to black (0x00)
+                        } else {
+                            single_char_buf[buf_idx] &= 0x00FF; // Set high byte (pixel 2) to black (0x00)
+                        }
+                    }
+                }
+            }
+
+            int target_x = cursor_x;
+            int target_y = cursor_y;
+
+            // 3. Configure load info for the IT8951 packed controller format
+            IT8951_Load_Img_Info draw_load;
+            draw_load.Endian_Type = 0;
+            draw_load.Pixel_Format = 2; // 8-bpp packed mode
+            draw_load.Rotate = 0;
+            // The function expects UBYTE*, cast our UWORD array safely
+            draw_load.Source_Buffer_Addr = (UBYTE*)single_char_buf;
+            draw_load.Target_Memory_Addr = target_addr;
+
+            IT8951_Area_Img_Info draw_area;
+            draw_area.Area_X = target_x;
+            draw_area.Area_Y = target_y;
+            draw_area.Area_W = Font20.Width;
+            draw_area.Area_H = Font20.Height;
+
+            EPD_IT8951_HostAreaPackedPixelWrite_8bp(&draw_load, &draw_area);
+
+            // 4. Trigger localized low-latency refresh using the working AreaBuf function
+            EPD_IT8951_Display_AreaBuf(
+                target_x, 
+                target_y, 
+                Font20.Width, 
+                Font20.Height, 
+                A2_Mode, 
+                target_addr
+            );
+
+            // 5. Advance typewriter cursor horizontally
+            cursor_x += Font20.Width;
+
+            // Line break logic (100px safety margin)
+            if (cursor_x + Font20.Width > dev_info.Panel_W - 100) {
+                cursor_x = 100;
+                cursor_y += (Font20.Height + 4);
+            }
+        }
+    } 
+
+    // Clean up hardware state on exit
+    close(kbd_fd);
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./examples/writer_test.c ==========
+
+========== BÖRJAN PÅ: ./examples/main.c ==========
+#include "../lib/Config/DEV_Config.h"
+#include "example.h"
+#include "../lib/GUI/GUI_BMPfile.h"
+
+#include <math.h>
+
+#include <stdlib.h>     //exit()
+#include <signal.h>     //signal()
+
+#define Enhance false
+
+#define USE_Factory_Test false
+
+#define USE_Normal_Demo true
+
+#define USE_Touch_Panel false
+
+UWORD VCOM = 2510;
+
+IT8951_Dev_Info Dev_Info = {0, 0};
+UWORD Panel_Width;
+UWORD Panel_Height;
+UDOUBLE Init_Target_Memory_Addr;
+int epd_mode = 0;	//0: no rotate, no mirror
+					//1: no rotate, horizontal mirror, for 10.3inch
+					//2: no totate, horizontal mirror, for 5.17inch
+					//3: no rotate, no mirror, isColor, for 6inch color
+					
+void  Handler(int signo){
+    Debug("\r\nHandler:exit\r\n");
+    if(Refresh_Frame_Buf != NULL){
+        free(Refresh_Frame_Buf);
+        Debug("free Refresh_Frame_Buf\r\n");
+        Refresh_Frame_Buf = NULL;
+    }
+    if(Panel_Frame_Buf != NULL){
+        free(Panel_Frame_Buf);
+        Debug("free Panel_Frame_Buf\r\n");
+        Panel_Frame_Buf = NULL;
+    }
+    if(Panel_Area_Frame_Buf != NULL){
+        free(Panel_Area_Frame_Buf);
+        Debug("free Panel_Area_Frame_Buf\r\n");
+        Panel_Area_Frame_Buf = NULL;
+    }
+    if(bmp_src_buf != NULL){
+        free(bmp_src_buf);
+        Debug("free bmp_src_buf\r\n");
+        bmp_src_buf = NULL;
+    }
+    if(bmp_dst_buf != NULL){
+        free(bmp_dst_buf);
+        Debug("free bmp_dst_buf\r\n");
+        bmp_dst_buf = NULL;
+    }
+	if(Dev_Info.Panel_W != 0){
+		Debug("Going to sleep\r\n");
+		EPD_IT8951_Sleep();
+	}
+    DEV_Module_Exit();
+    exit(0);
+}
+
+
+int main(int argc, char *argv[])
+{
+    //Exception handling:ctrl + c
+    signal(SIGINT, Handler);
+
+    if (argc < 2){
+        Debug("Please input VCOM value on FPC cable!\r\n");
+        Debug("Example: sudo ./epd -2.51\r\n");
+        exit(1);
+    }
+	if (argc != 3){
+		Debug("Please input e-Paper display mode!\r\n");
+		Debug("Example: sudo ./epd -2.51 0 or sudo ./epd -2.51 1\r\n");
+		Debug("Now, 10.3 inch glass panle is mode1, else is mode0\r\n");
+		Debug("If you don't know what to type in just type 0 \r\n");
+		exit(1);
+    }
+
+    //Init the BCM2835 Device
+    if(DEV_Module_Init()!=0){
+        return -1;
+    }
+
+    double temp;
+    sscanf(argv[1],"%lf",&temp);
+    VCOM = (UWORD)(fabs(temp)*1000);
+    Debug("VCOM value:%d\r\n", VCOM);
+	sscanf(argv[2],"%d",&epd_mode);
+    Debug("Display mode:%d\r\n", epd_mode);
+    Dev_Info = EPD_IT8951_Init(VCOM);
+
+#if(Enhance)
+    Debug("Attention! Enhanced driving ability, only used when the screen is blurred\r\n");
+    Enhance_Driving_Capability();
+#endif
+
+    //get some important info from Dev_Info structure
+    Panel_Width = Dev_Info.Panel_W;
+    Panel_Height = Dev_Info.Panel_H;
+    Init_Target_Memory_Addr = Dev_Info.Memory_Addr_L | (Dev_Info.Memory_Addr_H << 16);
+    char* LUT_Version = (char*)Dev_Info.LUT_Version;
+    if( strcmp(LUT_Version, "M641") == 0 ){
+        //6inch e-Paper HAT(800,600), 6inch HD e-Paper HAT(1448,1072), 6inch HD touch e-Paper HAT(1448,1072)
+        A2_Mode = 4;
+        Four_Byte_Align = true;
+    }else if( strcmp(LUT_Version, "M841_TFAB512") == 0 ){
+        //Another firmware version for 6inch HD e-Paper HAT(1448,1072), 6inch HD touch e-Paper HAT(1448,1072)
+        A2_Mode = 6;
+        Four_Byte_Align = true;
+    }else if( strcmp(LUT_Version, "M841") == 0 ){
+        //9.7inch e-Paper HAT(1200,825)
+        A2_Mode = 6;
+    }else if( strcmp(LUT_Version, "M841_TFA2812") == 0 ){
+        //7.8inch e-Paper HAT(1872,1404)
+        A2_Mode = 6;
+    }else if( strcmp(LUT_Version, "M841_TFA5210") == 0 ){
+        //10.3inch e-Paper HAT(1872,1404)
+        A2_Mode = 6;
+    }else{
+        //default set to 6 as A2 Mode
+        A2_Mode = 6;
+    }
+    Debug("A2 Mode:%d\r\n", A2_Mode);
+
+	EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, INIT_Mode);
+
+#if(USE_Factory_Test)
+	if(epd_mode == 3) 	// Color Test
+		Color_Test(Dev_Info, Init_Target_Memory_Addr);
+    else				// Normal Test
+		Factory_Test_Only(Dev_Info, Init_Target_Memory_Addr);
+#endif
+
+
+#if(USE_Normal_Demo)
+    //Show 16 grayscale
+    Display_ColorPalette_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr);
+	EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+
+    //Show some character and pattern
+    Display_CharacterPattern_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr, BitsPerPixel_4);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+
+    //Show a bmp file
+    //1bp use A2 mode by default, before used it, refresh the screen with WHITE
+    Display_BMP_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr, BitsPerPixel_1);
+    Display_BMP_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr, BitsPerPixel_2);
+    Display_BMP_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr, BitsPerPixel_4);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+    
+    //Show A2 mode refresh effect
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    Dynamic_Refresh_Example(Dev_Info,Init_Target_Memory_Addr);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+	
+    //Show how to display a gif, not works well on 6inch e-Paper HAT, 9.7inch e-Paper HAT, others work well
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    Dynamic_GIF_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+
+    //Show how to test frame rate, test it individually,which is related to refresh area size and refresh mode
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    Check_FrameRate_Example(800, 600, Init_Target_Memory_Addr, BitsPerPixel_1);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, A2_Mode);
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, GC16_Mode);
+#endif
+
+
+#if(USE_Touch_Panel)
+    //show a simple demo for hand-painted tablet, only support for <6inch HD touch e-Paper> at present
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, INIT_Mode);
+    TouchPanel_ePaper_Example(Panel_Width, Panel_Height, Init_Target_Memory_Addr);
+#endif
+
+    //We recommended refresh the panel to white color before storing in the warehouse.
+    EPD_IT8951_Clear_Refresh(Dev_Info, Init_Target_Memory_Addr, INIT_Mode);
+
+    //EPD_IT8951_Standby();
+    EPD_IT8951_Sleep();
+
+    //In case RPI is transmitting image in no hold mode, which requires at most 10s
+    DEV_Delay_ms(5000);
+
+    DEV_Module_Exit();
+    return 0;
+}
+
+========== SLUT PÅ: ./examples/main.c ==========
+
+========== BÖRJAN PÅ: ./examples/control_framebuffert.c ==========
+#include "EPD_IT8951.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+// Naturlig upplösning för 6-tums HD e-Paper
+#define WIDTH 1448
+#define HEIGHT 1072
+
+int main(void) {
+    printf("[1/7] Initierar IT8951-kontrollern...\n");
+    fflush(stdout);
+    
+    // Initiera skärmen
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140); 
+
+    // Skriv ut den information vi får tillbaka från skärmen för att verifiera SPI
+    printf("      -> Skärmbredd rapporterad: %d px\n", dev_info.Panel_W);
+    printf("      -> Skärmhöjd rapporterad: %d px\n", dev_info.Panel_H);
+    printf("      -> Minnesadress L: 0x%04X\n", dev_info.Memory_Addr_L);
+    printf("      -> Minnesadress H: 0x%04X\n", dev_info.Memory_Addr_H);
+    printf("      -> LUT-version: %s\n", dev_info.LUT_Version);
+    fflush(stdout);
+
+    // En snabb kontroll om vi verkar ha kontakt över SPI
+    if (dev_info.Panel_W == 0 || dev_info.Panel_W == 0xFFFF) {
+        printf("VARNING: Kunde inte läsa giltig information från IT8951. Kontrollera SPI och ström.\n");
+        fflush(stdout);
+    }
+
+    printf("[2/7] Allokerar framebuffert i RAM...\n");
+    fflush(stdout);
+    uint32_t buffer_size = WIDTH * HEIGHT;
+    uint8_t *frame_buffer = (uint8_t *)malloc(buffer_size);
+    if (frame_buffer == NULL) {
+        printf("FEL: Kunde inte allokera minne för framebufferten.\n");
+        fflush(stdout);
+        return -1; 
+    }
+
+    printf("[3/7] Fyller bufferten med vitt...\n");
+    fflush(stdout);
+    memset(frame_buffer, 0xFF, buffer_size);
+
+    printf("[4/7] Ritar en 100x100 svart kvadrat i minnet...\n");
+    fflush(stdout);
+    int start_x = (WIDTH / 2) - 50;
+    int start_y = (HEIGHT / 2) - 50;
+
+    for (int y = start_y; y < start_y + 100; y++) {
+        for (int x = start_x; x < start_x + 100; x++) {
+            frame_buffer[(y * WIDTH) + x] = 0x00; // Svart
+        }
+    }
+
+    printf("[5/7] Beräknar 32-bitars måladress...\n");
+    fflush(stdout);
+    UDOUBLE target_addr = dev_info.Memory_Addr_L | (dev_info.Memory_Addr_H << 16);
+    printf("      -> Beräknad target_addr: 0x%08lX\n", (unsigned long)target_addr);
+    fflush(stdout);
+
+    printf("[6/7] Skickar bilddata till IT8951 och uppdaterar skärmen (detta kan ta 1-2 sekunder)...\n");
+    fflush(stdout);
+    EPD_IT8951_8bp_Refresh(frame_buffer, 0, 0, WIDTH, HEIGHT, false, target_addr);
+
+    printf("[7/7] Frigör resurser och försätter skärmen i vila...\n");
+    fflush(stdout);
+    free(frame_buffer);
+    EPD_IT8951_Sleep();
+
+    printf("Klart!\n");
+    fflush(stdout);
+
+    return 0;
+}
+
+========== SLUT PÅ: ./examples/control_framebuffert.c ==========
 
