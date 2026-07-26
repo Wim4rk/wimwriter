@@ -127,15 +127,6 @@ int get_physical_y(int row) {
     return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
 }
 
-void redraw_buffer(char (buffer)[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
-    for (int row = 0; row < MAX_ROWS; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            // Vi skickar ALLA tecken, även mellanslag, för att "sudda" den gamla texten
-            render_char(buffer[row][col], get_physical_x(col), get_physical_y(row), target_addr);
-        }
-    }
-}
-
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     // 1. Flytta upp de 5 nedersta raderana till de 5 översta
     for (int row = 0; row < JUMP_LINES; row++) {
