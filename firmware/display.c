@@ -171,6 +171,11 @@ void init_display(UDOUBLE *target_addr) {
     }
     IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140);
     *target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
+
+    // Bygg upp fonten i RAM innan skärmen används
+    init_glyph_cache();
+
+    EPD_IT8951_Clear_Refresh(dev_info, *target_addr, GC16_Mode)
 }
 
 void cleanup_display(void) {
@@ -265,4 +270,40 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     }
 
     *cursor_col = chars_to_move;
+}
+
+// Förbereder font-cachen i RAM. Anropas en gång vid uppstart.
+void init_glyph_cache(void) {
+    // 32 pixlar bred innebär 4 bytes per rad (i ett 1-bpp format).
+    int bytes_per_row = GLYPH_W / 8;
+    int bytes_per_char = bytes_per_row * GLYPH_H;
+
+    for (int c = 0; c < 128; c++) {
+        // Fyll hela tecknets area med vitt (0xFF) som grund
+        memset(pre_flipped_glyphs[c], 0xFF, GLYPH_SIZE_BYTES);
+
+        // Hoppa över ASCII-tecken som inte har någon visuell representation (före mellanslag)
+        if (c < 32 || c > 126) {
+            continue;
+        }
+
+        int glyph_index = c - 32;
+        const uint8_t *font_ptr = &wim_font_32x64[[glyph_index * bytes_per_char];
+
+        // Packa upp 1-bpp till 8-bpp i RAM
+        for (int y = 0; y < GLYPH_H; y++) {
+            for (int x = 0; x < GLYPH_W; x++) {
+                int byte_index = (y * bytes_per_row) + (x / 8);
+                int bit_index = 7 - (x % 8); // Vänster till höger i byten
+
+                // Kontrollera om biten är satt (1 = utritad pixel)
+                bool is_black = (font_ptr[byte_index] & (1 << bit_index)) != 0;
+
+                if (is_black) {
+                    // Sätt pixeln till svart i cachen
+                    pre_flipped_glyphs[c][(y * GLYPH_W) + x] = 0x00;
+                }
+            }
+        }
+    }
 }
