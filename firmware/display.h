@@ -28,6 +28,8 @@
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
+void init_glyph_cache(void); // Lägg till denna rad
+void render_char(char c, int x, int y, UDOUBLE target_addr);
 
 // Nya hjälpfunktioner för buffert och Jump
 int get_physical_x(int col);

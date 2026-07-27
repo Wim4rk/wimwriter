@@ -175,7 +175,7 @@ void init_display(UDOUBLE *target_addr) {
     // Bygg upp fonten i RAM innan skärmen används
     init_glyph_cache();
 
-    EPD_IT8951_Clear_Refresh(dev_info, *target_addr, GC16_Mode)
+    EPD_IT8951_Clear_Refresh(dev_info, *target_addr, GC16_Mode);
 }
 
 void cleanup_display(void) {
@@ -288,7 +288,7 @@ void init_glyph_cache(void) {
         }
 
         int glyph_index = c - 32;
-        const uint8_t *font_ptr = &wim_font_32x64[[glyph_index * bytes_per_char];
+        const uint8_t *font_ptr = &wim_font_32x64[glyph_index * bytes_per_char];
 
         // Packa upp 1-bpp till 8-bpp i RAM
         for (int y = 0; y < GLYPH_H; y++) {
