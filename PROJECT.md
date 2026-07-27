@@ -10,8 +10,8 @@ För att projektet ska vara intressant och framgångsrikt måste vi kompromissl�
 
 1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
-3. **Säkerhet för data:** All text ska skrivas kontinuerligt till SD-kortet för att förhindra förlust vid plötsligt spänningsfall, samt synkas säkert och självständigt mot en NAS eller till Dropbox.
-4. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
+3. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
+4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas. Tänk skrivmaskin: om ordet är satt på papper så sitter det på papperet.
 
 ---
 
@@ -20,7 +20,7 @@ För att projektet ska vara intressant och framgångsrikt måste vi kompromissl�
 Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att använda de delar jag redan äger och att maximera drifttiden:
 
 * **Processor:** Raspberry Pi Zero W (v1). Vald framför Zero 2 W eftersom den har en extremt låg strömförbrukning (ARMv6-arkitektur).
-* **Skärm:** 6-tums e-bläcksskärm HD ansluten via ribbon-kablar till en dedikerad **IT8951 Driver HAT**, som i sin tur pratar med din Pi via **SPI**. 
+* **Skärm:** 6-tums e-bläcksskärm HD ansluten via en dedikerad *IT8951 Driver HAT*, som i sin tur pratar med din Pi via *SPI*. 
 - VCOM = -2.14 vilket oftast noteras 2140
 - Panel(W,H) = (1448,1072)
 - Memory Address = 122480
@@ -50,9 +50,8 @@ För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi
 #### Skärmstyrning (IT8951-optimering)
 
 * **Skrivläge (A2-mode):** Under aktivt skrivande körs skärmen i det monokroma, asynkrona **A2 (Animation)-läget**.
-* **Tyst städning (DU-mode):** Vid naturliga pauser, som vid inaktivitet eller när skrivprompten når skärmens slut, ska den aktuella skärmen uppdateras i det skarpare **DU (Direct Update)-läget** för att rensa bort eftersläpningar (ghosting).
-* **Helskärms-refresh:** En fullständig nollställning (flash) görs endast vid stora händelser (t.ex. sidbyte, eller *jump* enligt nedan).
-* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre tredjedelen av skärmen och prompten följer med. Texten hoppar två tredjedelar av skrivytans höjd. Konventionell scroll leder till att för mycket av skärmen uppdateras för ofta.
+* **Helskärms-refresh:** En fullständig uppdatering (flash) finns tillgänglig via F5.
+* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre tredjedelen av skärmen och prompten följer med. Vi behöver prova ut hur många rader texten ska hoppa.
 
 #### Skrivprogram
 
@@ -60,22 +59,22 @@ Gränssnittet skall vara minimalt. I stort sett bara textytan. Piltangenterna sk
 
 Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning, annan statistik eller andra uppgifter.
 
-#### Nätverk & Synk (Tailscale + NAS)
+#### Nätverk & Synk (Tailscale + NAS/Filserver)
 
 * **Helt självständig enhet:** Skrivmaskinen sköter allt själv på kommando, utan att jag behöver använda en annan dator.
-* **Säker tunnel via Tailscale:** Vi installerar Tailscale på din Pi Zero W (fullt kompatibelt med ARMv6). Den tunnlar sig automatiskt och säkert in till din NAS så fort nätverket aktiveras.
-* **Okrypterad Rsync (Ingen dubbelkryptering):** Eftersom Tailscale (WireGuard) redan krypterar nätverkstrafiken, kör vi en **okrypterad `rsync` direkt mot din NAS rsync-port** över Tailscale-IP:n. Detta sparar massor av CPU-resurser och batteri på din Pi då vi helt slipper SSH-kryptering ovanpå VPN-krypteringen.
-* **Automatisk backup** Spara en version varje timme, varje dag, varannan dag, varje vecka, varje månad.
-* **On-demand (funktions-knapp):**
-1. Slå på WiFi (`rfkill unblock`).
-2. Vänta på anslutning till Tailscale-nätverket.
-3. Kör okrypterad Rsync-push till din NAS.
-4. Slå av WiFi helt och hållet (`rfkill block`).
+* **Säker tunnel via Tailscale:** Vi installerar Tailscale på Pi Zero W (fullt kompatibelt med ARMv6). Den tunnlar sig automatiskt och säkert in till din NAS så fort nätverket aktiveras.
+* **Okrypterad Rsync (Ingen dubbelkryptering):** Eftersom Tailscale (WireGuard) redan krypterar nätverkstrafiken, kör vi en **okrypterad `rsync` direkt mot din NAS rsync-port** över Tailscale-IP:n.
+* **Automatisk backup** Dokumentsäkerhet, swap-filer, backup-filer. Ta fram en bra strategi.
+* **On-demand save/sync(funktions-knapp):**
+ 1. Slå på WiFi (`rfkill unblock`).
+ 2. Vänta på anslutning till Tailscale-nätverket.
+ 3. Kör okrypterad Rsync-push till din NAS.
+ 4. Slå av WiFi helt och hållet (`rfkill block`).
 
 ---
 
 ## Beslut och upptäckter ##
-* **Kompilering och drivrutiner:** Vi ska integrera Waveshares `Makefile`-logik och säkerställa att rätt flaggor (`-D BCM`) skickas till kompilatorn. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
+* **Kompilering och drivrutiner:** Vi måste säkerställa att rätt flaggor (`-D BCM`) finns i vår Makefil. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
 
 ---
 
@@ -86,4 +85,4 @@ Det vore fördelaktigt för batteritiden att bygga ett integrerat tangentbord so
 ---
 *Projektet upprättad 2026-07-20.*
 
-*Senaste uppdateringen 2026-07-24*
+*Senaste uppdateringen 2026-07-27*

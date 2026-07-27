@@ -35,6 +35,57 @@ int main() {
 ========== SLUT PÅ: ./software/editor.h ==========
 
 ========== BÖRJAN PÅ: ./software/file_io.c ==========
+#include <stdio.h>
+#include <string.h>
+
+void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+    // 1. Rensa bufferten helt med mellanslag från början
+    for (int r = 0; r < MAX_ROWS; r++) {
+        for (int c = 0; c < MAX_COLS; c++) {
+            buffer[r][c] = ' ';
+        }
+    }
+
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        // Om filen inte finns (ny fil), börja på rad 0, kolumn 0
+        *cursor_row = JUMP_LINES;
+        *cursor_col = 0;
+        return;
+    }
+
+    int row = 0;
+    int col = 0;
+    int ch;
+
+    // 2. Läs filen tecken för tecken och placera i bufferten med enkel word wrap-hänsyn
+    while ((ch = fgetc(file)) != EOF && row < MAX_ROWS) {
+        if (ch == '\n') {
+            row++;
+            col = 0;
+        } else {
+            if (col < MAX_COLS) {
+                buffer[row][col] = (char)ch;
+                col++;
+            } else {
+                // Enkel radbrytning om raden är full i filen
+                row++;
+                col = 0;
+                if (row < MAX_ROWS) {
+                    buffer[row][col] = (char)ch;
+                    col++;
+                }
+            }
+        }
+    }
+    fclose(file);
+
+    // 3. Sätt markören på slutet av texten
+    // Om filen fyller skärmen eller mer, lämna marginal i botten om möjligt,
+    // eller sätt markören på sista aktiva raden.
+    *cursor_row = row < MAX_ROWS ? row : MAX_ROWS - 1;
+    *cursor_col = col < MAX_COLS ? col : MAX_COLS - 1;
+}
 
 ========== SLUT PÅ: ./software/file_io.c ==========
 
@@ -225,13 +276,11 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 }
 
 void init_display(UDOUBLE *target_addr) {
-    // 1. Initiera hårdvara och SPI
     if (DEV_Module_Init() != 0) {
         return;
     }
-
-    // 2. Initiera EPD IT8951 (exempel med VCOM -2.14V / 2140)
-    *target_addr = EPD_IT8951_Init(2140);
+    IT8951_Dev_Info dev_info = EPD_IT8951_Init(2140);
+    *target_addr = ((UDOUBLE)dev_info.Memory_Addr_H << 16) | dev_info.Memory_Addr_L;
 }
 
 void cleanup_display(void) {
@@ -247,75 +296,138 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Flytta upp de 5 nedersta raderana till de 5 översta
-    for (int row = 0; row < JUMP_LINES; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            buffer[row][col] = buffer[MAX_ROWS - JUMP_LINES + row][col];
-        }
-    }
+    // 1. Minneshantering på Raspberry Pi
+    size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
+    memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
 
-    // 2. tÖM RESTEN AV BUFFERTEN (RAD 6 - 15)
-    for (int row = JUMP_LINES; row < MAX_ROWS; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            buffer[row][col] = ' ';
-        }
-    }
+    size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
+    memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
 
-    // 3. Flytta markören till startläge.
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // 4. Rita om hela skärmytan i A2-läge
-    redraw_buffer(buffer, target_addr);
+    // 2. Skärmuppdatering: Radera hela ytan under JUMP_LINES i ett svep
+    int clear_start_y = get_physical_y(MAX_ROWS - 1); // Bottenradens Y
+    int clear_height = (MAX_ROWS - JUMP_LINES) * GLYPH_H;
+    int clear_width = MAX_COLS * GLYPH_W;
+    int clear_start_x = get_physical_x(MAX_COLS - 1); // Vänstermarginalen (index är omvänt)
+
+    clear_area(clear_start_x, clear_start_y, clear_width, clear_height, target_addr);
+
+    // 3. Rita enbart ut kontextraderna
+    for (int row = 0; row < JUMP_LINES; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            if (buffer[row][col] != ' ') {
+                int px = get_physical_x(col);
+                int py = get_physical_y(row);
+                render_char(buffer[row][col], px, py, target_addr);
+            }
+        }
+    }
 }
 
+v#include <string.h>
+
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // Om vi inte har nått kanten behöver vi inte göra något
     if (*cursor_col < MAX_COLS) return;
 
-    // Kolla om tecknet vi står på eller just skrev är ett mellanslag
-    // Om det är ett mellanslag kan vi bara bryta raden direkt
     if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
         *cursor_col = 0;
         (*cursor_row)++;
         return;
     }
 
-    // Annars letar vi bakåt efter det senaste mellanslaget på raden för att flytta hela ordet
     int break_col = MAX_COLS - 1;
     while (break_col > 0 && buffer[*cursor_row][break_col] != ' ') {
         break_col--;
     }
 
-    // Om inget mellanslag hittades alls på raden (ett mycket långt ord)
-    // tvingas vi kapa ordet vid maxgränsen.
     if (break_col == 0) {
         *cursor_col = 0;
         (*cursor_row)++;
         return;
     }
 
-    // Flytta alla tecken från mellanslaget och framåt till nästa rad
     int chars_to_move = MAX_COLS - (break_col + 1);
     char temp_word[chars_to_move];
 
-    for (int i = 0; i < chars_to_move; i++) {
-        temp_word[i] = buffer[*cursor_row][break_col + 1 + i];
-        buffer[*cursor_row][break_col + 1 + i] = ' '; // Rensa gamla positionen
-    }
+    // 1. Minneshantering i RAM
+    memcpy(temp_word, &buffer[*cursor_row][break_col + 1], chars_to_move);
+    memset(&buffer[*cursor_row][break_col + 1], ' ', chars_to_move);
 
-    // Gå till nästa rad
+    // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
+    // Eftersom get_physical_x returnerar ett lägre värde ju högre kolumnindex är,
+    // utgör tecknet längst till höger (MAX_COLS - 1) raderingsytans startpunkt på X-axeln.
+    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_y = get_physical_y(*cursor_row);
+    int clear_width = chars_to_move * GLYPH_W;
+
+    clear_area(clear_x, clear_y, clear_width, GLYPH_H, target_addr);
+
+    // 3. Förbered ny rad
     (*cursor_row)++;
     *cursor_col = 0;
+    memcpy(&buffer[*cursor_row][0], temp_word, chars_to_move);
 
-    // Skriv in det flyttade ordet på början av nya raden
+    // 4. Skärmoperation: Rita ut ordet på den nya raden
     for (int i = 0; i < chars_to_move; i++) {
-        buffer[*cursor_row][*cursor_col] = temp_word[i];
-        (*cursor_col)++;
+        int px = get_physical_x(i);
+        int py = get_physical_y(*cursor_row);
+        render_char(temp_word[i], px, py, target_addr);
     }
 
-    // Rita om de berörda raderna på skärmen via vår buffertfunktion
-    redraw_buffer(buffer, target_addr);
+    *cursor_col = chars_to_move;
+}
+
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
+    if (width <= 0 || height <= 0) return;
+
+    int size = width * height;
+
+    // Statisk buffert för att undvika malloc i skrivloopen.
+    // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
+    static UBYTE white_buffer[92672];
+    static bool buffer_initialized = false;
+
+    if (!buffer_initialized) {
+        memset(white_buffer, 0xFF, sizeof(white_buffer)); // 0xFF är vitt i 8bpp
+        buffer_initialized = true;
+    }
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = white_buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = width;
+    area_info.Area_H = height;
+
+    // Skicka "damage box" till IT8951
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Blocköverföring av vita pixlar
+    fast_spi_write_nbyte(white_buffer, size);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Tvinga uppdatering i A2-läge för att rensa ytan direkt
+    EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
 }
 
 ========== SLUT PÅ: ./firmware/display.c ==========
@@ -1829,6 +1941,7 @@ int main(int argc, char *argv[])
 #include <unistd.h>
 #include <stdbool.h>
 #include <linux/input.h>
+#include <poll.h> // Krävs för asynkron inmatning
 #include "firmware/display.h"
 #include "keyboard.h"
 
@@ -1861,9 +1974,18 @@ int main() {
 
     clear_buffer();
 
-    // Startkoordinater
+    // Startkoordinater anpassade efter jump-logiken
     int cursor_col = 0;
-    int cursor_row = 5;
+    int cursor_row = JUMP_LINES;
+
+    // Tillstånd för prompten
+    bool prompt_visible = false;
+    int prompttimeout_ms = 500; // Halv sekund innan prompten ritas ut
+
+    // Konfigurera poll
+    struct pollfd fds[1];
+    fds[0].fd = kb_fd;
+    fds[0].events = POLLIN;
 
     printf("WimWriter redo.\n");
 
@@ -1871,55 +1993,82 @@ int main() {
 
     // Main loop - CPU rests in read() until interrupt from keyboard
     while (1) {
-        if (read(kb_fd, &ev, sizeof(ev)) > 0) {
-            if (ev.type == EV_KEY) {
 
-                // Hämta tecken från tabell
-                char c = keyboard_get_char(&ev);
+        int ret = poll(fds, 1, prompt_timeout_ms);
+        if (ret == 0) {
+                // TIMEOUT: 500 ms av inaktivitet har passerat
+                if (!prompt_visible) {
+                    int px = get_physical_x(cursor_col);
+                    int py = get_physical_y(cursor_row);
 
-                switch (c) {
-                    case '\n': // Enter
-                        cursor_col = 0;
-                        cursor_row++;
-                        break;
-
-                    case 127: // Backspace
-                    cursor_col--;
-                        if (cursor_col < 0) {
-                            if (cursor_row > 0) {
-                                cursor_row--;
-                                cursor_col = MAX_COLS - 1;
-                            } else {
-                                cursor_col = 0;
-                            }
-                        }
-                        // Overwrite buffer and screen with ' '
-                        text_buffer[cursor_row][cursor_col] = ' ';
-                        render_char(' ', get_physical_x(cursor_col), get_physical_y(cursor_row), target_addr);
-                        break;
-
-                    default:
-                        if (c > 0) { // Regular chars
-                            int px = get_physical_x(cursor_col);
-                            int py = get_physical_y(cursor_row);
-
-                            text_buffer[cursor_row][cursor_col] = c;
-                            render_char(c, px, py, target_addr);
-
-                            cursor_col++;
-
-                            // Word wrapping
-                            if (cursor_col >= MAX_COLS) {
-                                word_wrap(text_buffer, &cursor_row, &cursor_col, target_addr);
-                            }
-                        }
-                        break;
+                    // Rita ut understrecket i snabba A2-läget[cite: 1].
+                    render_char('_', px, py, target_addr);
+                    prompt_visible = true;
                 }
+            } else if (ret > 0) {
+                // HÄNDELSE: Data finns att läsa från tangentbordet
+                if (fds[0].revents & POLLIN) {
 
+                    if (read(kb_fd, &ev, sizeof(ev)) > 0) {
+                        if (ev.type == EV_KEY && (ev.value == 1 || ev.value == 2)) {
 
-                // Jump mechanism
-                if (cursor_row >= MAX_ROWS) {
-                    display_jump(text_buffer, &cursor_row, &cursor_col, target_addr);
+                            // Städa bort prompten om den är synlig innan nästa tecken hanteras
+                            if (prompt_visible) {
+                                int px = get_physical_x(cursor_col);
+                                int py = get_physical_y(cursor_row);
+
+                                render_char(' ', px, py, target_addr);
+                                prompt_visible = false;
+                            }
+
+                            // Hämta tecken från tabell
+                            char c = keyboard_get_char(&ev);
+
+                            switch (c) {
+                                case '\n': // Enter
+                                    cursor_col = 0;
+                                    cursor_row++;
+                                    break;
+
+                                case 127: // Backspace
+                                cursor_col--;
+                                    if (cursor_col < 0) {
+                                        if (cursor_row > 0) {
+                                            cursor_row--;
+                                            cursor_col = MAX_COLS - 1;
+                                        } else {
+                                            cursor_col = 0;
+                                        }
+                                    }
+                                    // Overwrite buffer and screen with ' '
+                                    text_buffer[cursor_row][cursor_col] = ' ';
+                                    render_char(' ', get_physical_x(cursor_col), get_physical_y(cursor_row), target_addr);
+                                    break;
+
+                                default:
+                                    if (c > 0) { // Regular chars
+                                        int px = get_physical_x(cursor_col);
+                                        int py = get_physical_y(cursor_row);
+
+                                        text_buffer[cursor_row][cursor_col] = c;
+                                        render_char(c, px, py, target_addr);
+
+                                        cursor_col++;
+
+                                        // Word wrapping
+                                        if (cursor_col >= MAX_COLS) {
+                                            word_wrap(text_buffer, &cursor_row, &cursor_col, target_addr);
+                                        }
+                                    }
+                                    break;
+                            }
+
+                            // Jump mechanism
+                            if (cursor_row >= MAX_ROWS) {
+                                display_jump(text_buffer, &cursor_row, &cursor_col, target_addr);
+                            }
+                        }
+                    }
                 }
             }
         }
