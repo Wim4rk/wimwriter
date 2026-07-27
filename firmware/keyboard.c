@@ -78,9 +78,12 @@ char keyboard_get_char(struct input_event *ev) {
 
             // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
-                                default_char == '{' || default_char == '}' || default_char == '|';
+                               default_char == '{' || default_char == '}' || default_char == '|';
 
             bool use_shift = shift_pressed;
+            if (caps_locked && is_letter) {
+                use_shift = !use_shift;
+            }
 
             if (use_shift) {
                 return map_shift[ev->code];

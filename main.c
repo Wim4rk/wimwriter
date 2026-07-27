@@ -72,7 +72,9 @@ int main() {
             if (fds[0].revents & POLLIN) {
 
                 if (read(kb_fd, &ev, sizeof(ev)) > 0) {
-                    if (ev.type == EV_KEY && (ev.value == 1 || ev.value == 2)) {
+                    if (ev.type == EV_KEY) {
+
+                        char c = keyboard_get_char(&ev);
 
                         // Städa bort prompten om den är synlig innan nästa tecken hanteras
                         if (prompt_visible) {
@@ -82,9 +84,6 @@ int main() {
                             render_char(' ', px, py, target_addr);
                             prompt_visible = false;
                         }
-
-                        // Hämta tecken från tabell
-                        char c = keyboard_get_char(&ev);
 
                         switch (c) {
                             case '\n': // Enter
