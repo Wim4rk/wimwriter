@@ -165,8 +165,6 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
     }
 }
 
-v#include <string.h>
-
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     if (*cursor_col < MAX_COLS) return;
 
