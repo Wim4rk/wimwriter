@@ -42,7 +42,7 @@ int main() {
 
     // Tillstånd för prompten
     bool prompt_visible = false;
-    int prompttimeout_ms = 500; // Halv sekund innan prompten ritas ut
+    int prompt_timeout_ms = 500; // Halv sekund innan prompten ritas ut
 
     // Konfigurera poll
     struct pollfd fds[1];
