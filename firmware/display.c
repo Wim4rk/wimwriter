@@ -11,6 +11,57 @@ extern void EPD_IT8951_ReadBusy(void);
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][GLYPH_SIZE_BYTES];
 
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
+    if (width <= 0 || height <= 0) return;
+
+    int size = width * height;
+
+    // Statisk buffert för att undvika malloc i skrivloopen.
+    // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
+    static UBYTE white_buffer[92672];
+    static bool buffer_initialized = false;
+
+    if (!buffer_initialized) {
+        memset(white_buffer, 0xFF, sizeof(white_buffer)); // 0xFF är vitt i 8bpp
+        buffer_initialized = true;
+    }
+
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = white_buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = width;
+    area_info.Area_H = height;
+
+    // Skicka "damage box" till IT8951
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Blocköverföring av vita pixlar
+    fast_spi_write_nbyte(white_buffer, size);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Tvinga uppdatering i A2-läge för att rensa ytan direkt
+    EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
+}
+
 void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
     // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
     // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
@@ -214,55 +265,4 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     }
 
     *cursor_col = chars_to_move;
-}
-
-void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
-    if (width <= 0 || height <= 0) return;
-
-    int size = width * height;
-
-    // Statisk buffert för att undvika malloc i skrivloopen.
-    // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
-    static UBYTE white_buffer[92672];
-    static bool buffer_initialized = false;
-
-    if (!buffer_initialized) {
-        memset(white_buffer, 0xFF, sizeof(white_buffer)); // 0xFF är vitt i 8bpp
-        buffer_initialized = true;
-    }
-
-    IT8951_Load_Img_Info load_info;
-    IT8951_Area_Img_Info area_info;
-
-    load_info.Source_Buffer_Addr = white_buffer;
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-    load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_0;
-    load_info.Target_Memory_Addr = target_addr;
-
-    area_info.Area_X = x;
-    area_info.Area_Y = y;
-    area_info.Area_W = width;
-    area_info.Area_H = height;
-
-    // Skicka "damage box" till IT8951
-    EPD_IT8951_SetTargetMemoryAddr(target_addr);
-    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
-
-    UWORD write_preamble = 0x0000;
-    EPD_IT8951_ReadBusy();
-    DEV_Digital_Write(EPD_CS_PIN, LOW);
-
-    DEV_SPI_WriteByte(write_preamble >> 8);
-    DEV_SPI_WriteByte(write_preamble);
-    EPD_IT8951_ReadBusy();
-
-    // Blocköverföring av vita pixlar
-    fast_spi_write_nbyte(white_buffer, size);
-
-    DEV_Digital_Write(EPD_CS_PIN, HIGH);
-    EPD_IT8951_LoadImgEnd();
-
-    // Tvinga uppdatering i A2-läge för att rensa ytan direkt
-    EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
 }
