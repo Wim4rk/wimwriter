@@ -30,6 +30,8 @@ void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
 void init_glyph_cache(void); // Lägg till denna rad
 void render_char(char c, int x, int y, UDOUBLE target_addr);
+// I display.h
+void render_status_bar(const char *text, UDOUBLE target_addr);
 
 // Nya hjälpfunktioner för buffert och Jump
 int get_physical_x(int col);

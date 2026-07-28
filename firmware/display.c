@@ -246,11 +246,9 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
 
     // 1. Minneshantering i RAM
     memcpy(temp_word, &buffer[*cursor_row][break_col + 1], chars_to_move);
-    memset(&buffer[*cursor_row][break_col + 1], ' ', chars_to_move);
+    memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
 
     // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    // Eftersom get_physical_x returnerar ett lägre värde ju högre kolumnindex är,
-    // utgör tecknet längst till höger (MAX_COLS - 1) raderingsytans startpunkt på X-axeln.
     int clear_x = get_physical_x(MAX_COLS - 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
@@ -260,9 +258,17 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     // 3. Förbered ny rad
     (*cursor_row)++;
     *cursor_col = 0;
+
+    // Fånga upp om vi nått skärmens slut innan vi skriver till RAM.
+    // Texten hoppar upp och skrivprompten placeras på den definierade raden[cite: 2].
+    if (*cursor_row >= MAX_ROWS) {
+        display_jump(buffer, cursor_row, cursor_col, target_addr);
+    }
+
     memcpy(&buffer[*cursor_row][0], temp_word, chars_to_move);
 
     // 4. Skärmoperation: Rita ut ordet på den nya raden
+    // Utritningen drar nytta av kontrollerns snabba A2-läge[cite: 1, 2].
     for (int i = 0; i < chars_to_move; i++) {
         int px = get_physical_x(i);
         int py = get_physical_y(*cursor_row);
@@ -279,5 +285,24 @@ void init_glyph_cache(void) {
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
             pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
         }
+    }
+}
+
+void render_status_bar(const char *text, UDOUBLE target_addr) {
+    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM; // 1072 - 68 = 1004
+
+    // 1. Rensa ytan i botten av skärmen (från x=0 till SCREEN_WIDTH)
+    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+
+    // 2. Skriv ut texten, med 4 px offset nedåt för att ge plats åt skiljelinjen[cite: 2]
+    int text_y = start_y + 4;
+
+    // Börja rita från den absoluta vänsterkanten
+    int current_x = 0;
+
+    // Låt texten löpa hela vägen till SCREEN_WIDTH (1448 px)[cite: 2]
+    for (int i = 0; text[i] != '\0' && current_x < SCREEN_WIDTH; i++) {
+        render_char(text[i], current_x, text_y, target_addr);
+        current_x += GLYPH_W;
     }
 }
