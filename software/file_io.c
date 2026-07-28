@@ -4,15 +4,17 @@
 #include <string.h>
 
 void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
-    // 1. Rensa bufferten helt med mellanslag
-    for (int r = 0; r < MAX_ROWS; r++) {
-        for (int c = 0; c < MAX_COLS; c++) {
-            buffer[r][c] = ' ';
-        }
-    }
+    // 1. Rensa hela bufferten
+    memset(buffer, ' ', MAX_ROWS * MAX_COLS * sizeof(char));
 
-    // 2. Sätt markören på startpositionen för ett tomt dokument
-    // Vi använder JUMP_LINES för att lämna utrymme i toppen, enligt specifikation.
-    *cursor_row = JUMP_LINES;
+    // 2. Läs in text från SD-kortet.
+    // Här lägger du din inläsningslogik som fyller bufferten från rad 0
+    // fram till MAX_ROWS - JUMP_LINES - 1.
+
+    // 3. Sätt markören på den första lediga raden i bottenmarginalen
+    *cursor_row = MAX_ROWS - JUMP_LINES;
     *cursor_col = 0;
+
+    // 4. Uppdatera skärmen med det inlästa dokumentet
+    stitch_and_render_screen(buffer);
 }

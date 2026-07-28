@@ -226,8 +226,8 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
-                if (c > 0 || key_code == KEY_BACKSPACE) {
-                    process_text_input(c > 0 ? c : 127, text_buffer, cursor_row, cursor_col, target_addr);
+                if (c > 0) {
+                    process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr);
                 }
             }
             break;
@@ -362,17 +362,23 @@ bool keyboard_is_shift_pressed(void);
 #define MARGIN_TOP 44
 #define MARGIN_BOTTOM 68
 
-#define MAX_COLS 41
-#define MAX_ROWS 15
+// #define MAX_COLS 41
+// #define MAX_ROWS 15
 
-#define GLYPH_W 32
-#define GLYPH_H 64
-#define GLYPH_SIZE_BYTES 2048
+#define MAX_COLS 82
+#define MAX_ROWS 30
+
+// #define GLYPH_W 32
+// #define GLYPH_H 64
+
+#define GLYPH_W 16
+#define GLYPH_H 32
+#define GLYPH_SIZE_BYTES 512
 
 #define IT8951_A2_MODE 6
 
 // Parameter för hur många rader som bevaras vid Jump
-#define JUMP_LINES 2
+#define JUMP_LINES 4
 
 #define FULL_SCREEN_BUFFER_SIZE ((SCREEN_WIDTH * SCREEN_HEIGHT) / 8)
 
@@ -392,6 +398,12 @@ void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
+// Skärmbufferten som speglar dokumentet (Vyn)
+char view_buffer[MAX_ROWS][MAX_COLS];
+
+// Den statiska bildbufferten i RAM
+uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
 #endif
 -e 
 ========== SLUT PÅ: ./firmware/display.h ==========
@@ -400,7 +412,8 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 #include <stdio.h>
 #include <string.h>
 #include "display.h"
-#include "wim_font_courier.h"
+// #include "wim_font_courier.h"
+#include "wim_font_16x32_prestige.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
@@ -589,35 +602,37 @@ int get_physical_y(int row) {
     return MARGIN_TOP + (row * GLYPH_H);
 }
 
-void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Minneshantering på Raspberry Pi
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+    // 1. Flytta upp de sista kontextraderna till toppen av bufferten
     size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
     memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
 
+    // 2. Rensa hela utrymmet under kontextraderna med mellanslag
     size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
     memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
 
+    // 3. Sätt markören på första lediga rad efter kontexten
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // 2. Skärmuppdatering: Radera hela ytan under JUMP_LINES i ett svep
-    int clear_start_y = get_physical_y(MAX_ROWS - 1); // Bottenradens Y
-    int clear_height = (MAX_ROWS - JUMP_LINES) * GLYPH_H;
-    int clear_width = MAX_COLS * GLYPH_W;
-    int clear_start_x = get_physical_x(MAX_COLS - 1); // Vänstermarginalen (index är omvänt)
+    // 4. Bygg bilden i RAM och skicka till IT8951
+    stitch_and_render_screen(buffer);
+}
 
-    clear_area(clear_start_x, clear_start_y, clear_width, clear_height, target_addr);
+void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+    // 1. Rensa hela bufferten
+    memset(buffer, ' ', MAX_ROWS * MAX_COLS * sizeof(char));
 
-    // 3. Rita enbart ut kontextraderna
-    for (int row = 0; row < JUMP_LINES; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            if (buffer[row][col] != ' ') {
-                int px = get_physical_x(col);
-                int py = get_physical_y(row);
-                render_char(buffer[row][col], px, py, target_addr);
-            }
-        }
-    }
+    // 2. Läs in text från SD-kortet.
+    // Här lägger du din inläsningslogik som fyller bufferten från rad 0
+    // fram till MAX_ROWS - JUMP_LINES - 1.
+
+    // 3. Sätt markören på den första lediga raden i bottenmarginalen
+    *cursor_row = MAX_ROWS - JUMP_LINES;
+    *cursor_col = 0;
+
+    // 4. Uppdatera skärmen med det inlästa dokumentet
+    stitch_and_render_screen(buffer);
 }
 
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -648,7 +663,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
 
     // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_x = get_physical_x(break_col + 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
 
@@ -682,7 +697,7 @@ void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
             // Vänder arrayen baklänges för att rotera tecknet 180 grader
-            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
+            pre_flipped_glyphs[c][i] = wim_font_16x32[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
 }
@@ -704,6 +719,38 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
         render_char(text[i], current_x, text_y, target_addr);
         current_x += GLYPH_W;
     }
+}
+
+void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS]) {
+    // 1. Rensa bildbufferten (fyll med 0xFF för vit bakgrund)
+    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+
+    // 2. Iterera över skärmbuffertens rader och kolumner
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            char c = buffer[row][col];
+
+            // Ignorera tomma tecken
+            if (c == ' ' || c == '\0') continue;
+
+            // Beräkna absoluta startkoordinater för tecknet
+            int start_x = MARGIN_LEFT + (col * GLYPH_W);
+            int start_y = MARGIN_TOP + (row * GLYPH_H);
+
+            uint8_t* glyph_bitmap = get_glyph_from_cache(c);
+
+            // 3. Kopiera in tecknets bitmapp, rad för rad, i den stora bufferten
+            for (int h = 0; h < GLYPH_H; h++) {
+                int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
+                memcpy(&full_screen_buffer[buffer_offset],
+                       &glyph_bitmap[h * GLYPH_W],
+                       GLYPH_W);
+            }
+        }
+    }
+
+    // 4. Blocköverföring via SPI
+    send_buffer_to_it8951(full_screen_buffer, sizeof(full_screen_buffer));
 }
 -e 
 ========== SLUT PÅ: ./firmware/display.c ==========
