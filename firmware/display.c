@@ -183,11 +183,13 @@ void cleanup_display(void) {
 }
 
 int get_physical_x(int col) {
-    return MARGIN_LEFT + (col * GLYPH_W);
+    // Börja vid den fysiska vänsterkanten (högt X-värde) och minska X för varje ny kolumn
+    return SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * GLYPH_W);
 }
 
 int get_physical_y(int row) {
-    return MARGIN_TOP + (row * GLYPH_H);
+    // Börja vid den fysiska toppen (högt Y-värde) och minska Y för varje ny rad
+    return SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * GLYPH_H);
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
