@@ -249,7 +249,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
 
     // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_x = get_physical_x(break_col + 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
 

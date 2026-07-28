@@ -159,8 +159,8 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
-                if (c > 0 || key_code == KEY_BACKSPACE) {
-                    process_text_input(c > 0 ? c : 127, text_buffer, cursor_row, cursor_col, target_addr);
+                if (c > 0) {
+                    process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr);
                 }
             }
             break;

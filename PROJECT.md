@@ -73,16 +73,17 @@ Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning
 
 ---
 
-## Beslut och upptäckter ##
-* **Kompilering och drivrutiner:** Vi måste säkerställa att rätt flaggor (`-D BCM`) finns i vår Makefil. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
+## Framtida förbättringar
+
+* **Fontstorlekar:** Vi kan lägga till fler fontstorlekar före att ge användaren mer flexibilitet. En mindre font kan också förbättra latensen, eventuellt. Den första storlek vi lägger till skall vara hälften så stor som den nuvarande fontstorleken, det gör det enkelt att beräkna antalet kollumner och rader. Helst ska våra marginaler förbli desamma. Det torde inte vara ett problem att ha flera fontstorlekar i RAM.
+* **Integrerat tangentbord:** Vi kan lägga till ett integrerat tangentbord som inte kräver en separat USB-anslutning. Detta skulle öka batteritiden.
 
 ---
 
-## Framtida modifikationer och förbättringar
-
-Det vore fördelaktigt för batteritiden att bygga ett integrerat tangentbord som inte kräver en separat USB-anslutning. Därför sparar vi på fysiska PINs på Raspberryn så gott vi kan.
+## Upptäckter
+* **Kompilering och drivrutiner:** Vi måste säkerställa att rätt flaggor (`-D BCM`) finns i vår Makefil. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
 
 ---
 *Projektet upprättad 2026-07-20.*
 
-*Senaste uppdateringen 2026-07-27*
+*Senaste uppdateringen 2026-07-28*

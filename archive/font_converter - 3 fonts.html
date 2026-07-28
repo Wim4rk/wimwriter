@@ -2,7 +2,7 @@
 <html lang="sv">
 <head>
     <meta charset="UTF-8">
-    <title>Svensk ASCII 32x64 Typsnittsgenerator</title>
+    <title>Svensk ASCII Typsnittsgenerator (3 storlekar)</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; background: #f9f9f9; color: #333; }
         .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
@@ -18,41 +18,36 @@
 <body>
 
 <div class="container">
-    <h2>Svensk ASCII (SIS 63 61 27) Typsnittsgenerator</h2>
-    <p>Skapar ett okomprimerat 32x64-format (1 byte per pixel). 0xFF = Vit bakgrund, 0x00 = Svart text.</p>
+    <h2>Svensk ASCII Typsnittsgenerator</h2>
+    <p>Skapar okomprimerade C-headerfiler (.h) för 32x64, 16x32 och 8x16.</p>
 
     <label for="fontStyle">Typsnitt (Skrivmaskinsstil):</label>
     <select id="fontStyle" onchange="updatePreview()">
         <option value="Courier New">Courier New (Standard Windows/Mac)</option>
         <option value="Courier">Courier</option>
+        <option value="Prestige Elite">Prestige Elite</option>
         <option value="monospace">Standard Monospace</option>
     </select>
 
-    <label for="fontSize">Typsnittsstorlek (pixlar):</label>
+    <label for="fontSize">Basstorlek (anpassas automatiskt per font):</label>
     <input type="number" id="fontSize" value="46" oninput="updatePreview()">
 
-    <label for="xOffset">X-offset (Justera i sidled):</label>
+    <label for="xOffset">X-offset:</label>
     <input type="number" id="xOffset" value="2" oninput="updatePreview()">
 
-    <label for="yOffset">Y-offset (Justera i höjdled / baslinje):</label>
+    <label for="yOffset">Y-offset:</label>
     <input type="number" id="yOffset" value="48" oninput="updatePreview()">
 
-    <label for="format">Utdataformat:</label>
-    <select id="format">
-        <option value="bin">Rå binärfil (.bin) - 256 KB</option>
-        <option value="c">C-Headerfil (.h) - Källkod</option>
-    </select>
-
     <div class="preview-box">
-        <span class="preview-title">Realtidsgranskning av pixelblocken (32x64)</span>
+        <span class="preview-title">Realtidsgranskning (32x64)</span>
         <div>
             <canvas id="previewCanvas1" width="32" height="64"></canvas>
             <canvas id="previewCanvas2" width="32" height="64"></canvas>
         </div>
-        <small style="color: #666; display: block; margin-top: 5px;">Visar tecknen 'Ä' (index 0x5B) och 'g' (index 0x67)</small>
+        <small style="color: #666; display: block; margin-top: 5px;">Visar tecknen 'Ä' och 'g'</small>
     </div>
 
-    <button onclick="generateFont()">Generera och ladda ner typsnitt</button>
+    <button onclick="generateAllFonts()">Generera och ladda ner alla tre .h-filer</button>
 </div>
 
 <script>
@@ -61,7 +56,6 @@
         0x7B: 'ä', 0x7C: 'ö', 0x7D: 'å', 0x7E: 'ü'
     };
 
-    // Funktion för att rita ett enskilt tecken på en angiven canvas
     function drawCharToCanvas(canvasId, charStr) {
         const canvas = document.getElementById(canvasId);
         const ctx = canvas.getContext('2d');
@@ -70,43 +64,34 @@
         const xOffset = parseInt(document.getElementById('xOffset').value, 10);
         const yOffset = parseInt(document.getElementById('yOffset').value, 10);
 
-        // Rensa ritytan till helt vit (0xFF)
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, 32, 64);
 
-        // Rita texten i rent svart (0x00)
         ctx.fillStyle = "#000000";
         ctx.font = `${fontSize}px "${fontName}"`;
         ctx.fillText(charStr, xOffset, yOffset);
     }
 
-    // Uppdaterar förhandsgranskningen direkt när användaren ändrar ett värde
     function updatePreview() {
         drawCharToCanvas('previewCanvas1', 'Ä');
         drawCharToCanvas('previewCanvas2', 'g');
     }
 
-    function generateFont() {
-        const fontName = document.getElementById('fontStyle').value;
-        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
-        const xOffset = parseInt(document.getElementById('xOffset').value, 10);
-        const yOffset = parseInt(document.getElementById('yOffset').value, 10);
-        const outputFormat = document.getElementById('format').value;
-
-        const W = 32;
-        const H = 64;
+    function generateFontHeader(w, h, baseFontSize, fontName, userXOffset, userYOffset) {
         const totalChars = 128;
-        const totalBytes = totalChars * W * H;
+        // Skala proportionellt utifrån basstorleken (som är optimerad för 64px höjd)
+        const scale = h / 64;
+        const fontSize = Math.round(baseFontSize * scale);
+        const xOffset = Math.round(userXOffset * scale);
+        const yOffset = Math.round(userYOffset * scale);
 
-        // Skapa en temporär dold canvas för själva exportloopen
         const canvas = document.createElement('canvas');
-        canvas.width = W;
-        canvas.height = H;
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-        const rawBytes = new Uint8Array(totalBytes);
-        let byteIdx = 0;
-        let cCode = "#ifndef SWEDISH_FONT_32X64_H\n#define SWEDISH_FONT_32X64_H\n\n#include <stdint.h>\n\nconst uint8_t swedish_font_32x64[128][2048] = {\n";
+        const guardName = `WIM_FONT_${w}X${h}_H`;
+        let cCode = `#ifndef ${guardName}\n#define ${guardName}\n\n#include <stdint.h>\n\nconst uint8_t wim_font_${w}x${h}[128][${w * h}] = {\n`;
 
         for (let i = 0; i < totalChars; i++) {
             let charToDraw = " ";
@@ -117,50 +102,40 @@
             }
 
             ctx.fillStyle = "#FFFFFF";
-            ctx.fillRect(0, 0, W, H);
+            ctx.fillRect(0, 0, w, h);
             ctx.fillStyle = "#000000";
             ctx.font = `${fontSize}px "${fontName}"`;
             ctx.fillText(charToDraw, xOffset, yOffset);
 
-            const imgData = ctx.getImageData(0, 0, W, H).data;
+            const imgData = ctx.getImageData(0, 0, w, h).data;
             let charBytes = [];
 
-            for (let y = 0; y < H; y++) {
-                for (let x = 0; x < W; x++) {
-                    const idx = (y * W + x) * 4;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
                     const brightness = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
                     const val = (brightness < 128) ? 0x00 : 0xFF;
-
-                    rawBytes[byteIdx++] = val;
-                    if (outputFormat === 'c') {
-                        charBytes.push("0x" + val.toString(16).toUpperCase().padStart(2, '0'));
-                    }
+                    charBytes.push("0x" + val.toString(16).toUpperCase().padStart(2, '0'));
                 }
             }
 
-            if (outputFormat === 'c') {
-                const cleanChar = (i >= 32 && i < 127) ? charToDraw : ' ';
-                cCode += `    // Index 0x${i.toString(16).toUpperCase().padStart(2, '0')} ('${cleanChar}')\n    {\n        `;
-                for (let b = 0; b < charBytes.length; b++) {
-                    cCode += charBytes[b] + (b === charBytes.length - 1 ? "" : ", ");
-                    if ((b + 1) % 12 === 0 && b !== charBytes.length - 1) {
-                        cCode += "\n        ";
-                    }
+            const cleanChar = (i >= 32 && i < 127) ? charToDraw : ' ';
+            cCode += `    // Index 0x${i.toString(16).toUpperCase().padStart(2, '0')} ('${cleanChar}')\n    {\n        `;
+            for (let b = 0; b < charBytes.length; b++) {
+                cCode += charBytes[b] + (b === charBytes.length - 1 ? "" : ", ");
+                if ((b + 1) % 12 === 0 && b !== charBytes.length - 1) {
+                    cCode += "\n        ";
                 }
-                cCode += "\n    },\n";
             }
+            cCode += "\n    },\n";
         }
 
-        let blob, filename;
-        if (outputFormat === 'bin') {
-            blob = new Blob([rawBytes], { type: "application/octet-stream" });
-            filename = "wim_font_32x64.bin";
-        } else {
-            cCode += "};\n\n#endif // SWEDISH_FONT_32X64_H\n";
-            blob = new Blob([cCode], { type: "text/plain;charset=utf-8" });
-            filename = "wim_font_32x64.h";
-        }
+        cCode += `};\n\n#endif // ${guardName}\n`;
+        return { content: cCode, filename: `wim_font_${w}x${h}.h` };
+    }
 
+    function downloadFile(content, filename) {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = filename;
@@ -168,7 +143,27 @@
         URL.revokeObjectURL(link.href);
     }
 
-    // Körs första gången sidan laddas för att rita startvärdena
+    function generateAllFonts() {
+        const fontName = document.getElementById('fontStyle').value;
+        const baseFontSize = parseInt(document.getElementById('fontSize').value, 10);
+        const userXOffset = parseInt(document.getElementById('xOffset').value, 10);
+        const userYOffset = parseInt(document.getElementById('yOffset').value, 10);
+
+        const configs = [
+            { w: 32, h: 64 },
+            { w: 16, h: 32 },
+            { w: 8, h: 16 }
+        ];
+
+        configs.forEach((cfg, index) => {
+            const fontData = generateFontHeader(cfg.w, cfg.h, baseFontSize, fontName, userXOffset, userYOffset);
+            // Fördröj nedladdningarna något så webbläsaren hinner med alla tre filer
+            setTimeout(() => {
+                downloadFile(fontData.content, fontData.filename);
+            }, index * 300);
+        });
+    }
+
     window.onload = updatePreview;
 </script>
 

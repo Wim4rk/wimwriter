@@ -86,10 +86,15 @@ static int current_file_index = 0;
 static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 static void show_file_in_status_bar(void) {}
-static void hide_status_bar_and_redraw(void) {}
 static void show_next_file(void) {}
 static void save_to_sd(const char *filename) {}
 static void force_full_redraw(void) {}
+
+static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
+    // Om du vill implementera städningen direkt kan du lägga in:
+    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
+    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+}
 
 // Bygger strängen och skickar den till skärmen
 static void update_status_bar_visuals(UDOUBLE target_addr) {
@@ -118,7 +123,7 @@ static void clear_filename_buffer(void) {
     memset(current_filename, 0, sizeof(current_filename));
 }
 
-static void generate_default_file_name(void){
+static void generate_default_filename(void){
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     snprintf(current_filename, sizeof(current_filename), "wimwriter - %04d-%02d-%02d_%02d%02d.txt",
@@ -213,17 +218,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
                     save_to_sd(current_filename);
                 }
             }
-            else if (key_code == KEY_F2) {
-                // Om filen saknar namn, gå till namngivning[cite: 2]
-                if (strlen(current_filename) == 0) {
-                    is_suggested_name = true;
-                    // TODO: Generera "wimwriter - [tidpunkt].txt" i current_filename
-                    // TODO: Visa statusraden
-                    current_state = STATE_NAMING_FILE;
-                } else {
-                    save_to_sd(current_filename);
-                }
-            }
             else if (key_code == KEY_F3) {
                 previous_file_index = current_file_index;
                 show_file_in_status_bar();
@@ -251,11 +245,11 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else if (key_code == KEY_ESC) {
                 current_file_index = previous_file_index;
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
             }
             else if (c > 0) {
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 // TODO: load_file_into_buffer(...)
                 force_full_redraw();
                 current_state = STATE_EDITING;
@@ -347,6 +341,9 @@ void keyboard_close(int fd);
 // Tolka eventet och returnera tecknet (returnerar 0 om ogiltigt/osynligt)
 char keyboard_get_char(struct input_event *ev);
 
+bool keyboard_is_ctrl_pressed(void);
+bool keyboard_is_shift_pressed(void);
+
 #endif
 -e 
 ========== SLUT PÅ: ./firmware/keyboard.h ==========
@@ -382,6 +379,7 @@ char keyboard_get_char(struct input_event *ev);
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr);
 void init_glyph_cache(void); // Lägg till denna rad
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 // I display.h
@@ -584,11 +582,11 @@ void cleanup_display(void) {
 }
 
 int get_physical_x(int col) {
-    return SCREEN_WIDTH - MARGIN_RIGHT - ((col + 1) * GLYPH_W);
+    return MARGIN_LEFT + (col * GLYPH_W);
 }
 
 int get_physical_y(int row) {
-    return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
+    return MARGIN_TOP + (row * GLYPH_H);
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -682,8 +680,8 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
 // Förbereder font-cachen i RAM. Anropas en gång vid uppstart.
 void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
-        // En 180-graders rotation är detsamma som att läsa arrayen baklänges
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
+            // Vänder arrayen baklänges för att rotera tecknet 180 grader
             pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
@@ -747,6 +745,7 @@ void fast_spi_write_nbyte(UBYTE *pData, UDOUBLE len);
 // Håll koll på modifier-tangenter
 static bool shift_pressed = false;
 static bool caps_locked = false;
+static bool ctrl_pressed = false;
 
 // Mappning för standardtangenter (Svensk fysisk layout -> 7-bit ASCII)
 // Observera: 'å' = '}', 'ä' = '{', 'ö' = '|' i din 7-bitars standard
@@ -796,9 +795,14 @@ void keyboard_close(int fd) {
     if (fd != -1) close(fd);
 }
 
-// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 2]
+// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 1, 2]
 bool keyboard_is_shift_pressed(void) {
     return shift_pressed;
+}
+
+// Publik funktion så editor.c kan kontrollera ctrl (t.ex. Ctrl + Backspace)
+bool keyboard_is_ctrl_pressed(void) {
+    return ctrl_pressed;
 }
 
 char keyboard_get_char(struct input_event *ev) {
@@ -807,6 +811,13 @@ char keyboard_get_char(struct input_event *ev) {
         shift_pressed = (ev->value == 1 || ev->value == 2);
         return 0;
     }
+
+    // Hantera Ctrl-tangenterna
+    if (ev->code == KEY_LEFTCTRL || ev->code == KEY_RIGHTCTRL) {
+        ctrl_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+
     if (ev->code == KEY_CAPSLOCK && ev->value == 1) {
         caps_locked = !caps_locked;
         return 0;
@@ -817,7 +828,7 @@ char keyboard_get_char(struct input_event *ev) {
         if (ev->code < 128) {
             char default_char = map_default[ev->code];
 
-            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
+            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)[cite: 1]
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
                                default_char == '{' || default_char == '}' || default_char == '|';
 
@@ -884,7 +895,7 @@ int main() {
 
     // Tillstånd för prompten
     bool prompt_visible = false;
-    int prompt_timeout_ms = 500; // Halv sekund innan prompten ritas ut
+    int prompt_timeout_ms = 1200; // Halv sekund innan prompten ritas ut
 
     // Konfigurera poll
     struct pollfd fds[1];
@@ -900,7 +911,7 @@ int main() {
         int ret = poll(fds, 1, prompt_timeout_ms);
 
         if (ret == 0) {
-            // TIMEOUT: 500 ms av inaktivitet har passerat
+            // TIMEOUT: inaktivitet har passerat
             if (!prompt_visible) {
                 int px = get_physical_x(cursor_col);
                 int py = get_physical_y(cursor_row);

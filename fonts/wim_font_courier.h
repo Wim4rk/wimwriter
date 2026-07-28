@@ -1,9 +1,9 @@
-#ifndef WIM_FONT_32X64_H
-#define WIM_FONT_32X64_H
+#ifndef WIM_FONT_COURIER_32X64_H
+#define WIM_FONT_COURIER_32X64_H
 
 #include <stdint.h>
 
-const uint8_t wim_font_32x64[128][2048] = {
+const uint8_t wim_font_courier_32x64[128][2048] = {
     // Index 0x00 (' ')
     {
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
