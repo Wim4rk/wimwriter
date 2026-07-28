@@ -28,6 +28,7 @@
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr);
 void init_glyph_cache(void); // Lägg till denna rad
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 // I display.h

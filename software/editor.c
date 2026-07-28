@@ -19,10 +19,15 @@ static int current_file_index = 0;
 static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 static void show_file_in_status_bar(void) {}
-static void hide_status_bar_and_redraw(void) {}
 static void show_next_file(void) {}
 static void save_to_sd(const char *filename) {}
 static void force_full_redraw(void) {}
+
+static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
+    // Om du vill implementera städningen direkt kan du lägga in:
+    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
+    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+}
 
 // Bygger strängen och skickar den till skärmen
 static void update_status_bar_visuals(UDOUBLE target_addr) {
@@ -173,11 +178,11 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else if (key_code == KEY_ESC) {
                 current_file_index = previous_file_index;
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
             }
             else if (c > 0) {
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 // TODO: load_file_into_buffer(...)
                 force_full_redraw();
                 current_state = STATE_EDITING;
