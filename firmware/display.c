@@ -2,7 +2,7 @@
 #include <string.h>
 #include "display.h"
 // #include "wim_font_courier.h"
-#include "wim_font_16x32_prestige.h"
+#include "wim_font_prestige_32x64.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
@@ -276,7 +276,7 @@ void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
             // Vänder arrayen baklänges för att rotera tecknet 180 grader
-            pre_flipped_glyphs[c][i] = wim_font_16x32[c][GLYPH_SIZE_BYTES - 1 - i];
+            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
 }

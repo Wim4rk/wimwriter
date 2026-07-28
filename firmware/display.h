@@ -11,18 +11,13 @@
 #define MARGIN_TOP 44
 #define MARGIN_BOTTOM 68
 
-// #define MAX_COLS 41
-// #define MAX_ROWS 15
+#define MAX_COLS 41
+#define MAX_ROWS 15
 
-#define MAX_COLS 82
-#define MAX_ROWS 30
+#define GLYPH_W 32
+#define GLYPH_H 64
 
-// #define GLYPH_W 32
-// #define GLYPH_H 64
-
-#define GLYPH_W 16
-#define GLYPH_H 32
-#define GLYPH_SIZE_BYTES 512
+#define GLYPH_SIZE_BYTES 2048
 
 #define IT8951_A2_MODE 6
 
