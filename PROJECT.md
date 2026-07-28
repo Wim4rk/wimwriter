@@ -2,6 +2,17 @@
 
 ---
 
+## Prioriterade action points - Att göra
+
+* Statusraden renderas på fel ställe. Uppe till höger, och den skriver åt vänster. Vi har löst det problemet många gånger.
+* Ctrl + backspace
+* Om jag skriver för fort när skärmen gör stora uppdateringar så renderas inte allt det jag skriver. Jag vill att det ska buffras upp och hinna ikapp. Måhända kan bufferten stitchas så att hela texten renderas på en gång?
+* Bokstäver med shift har strulat lite. Undersök och förbättra.
+* Hur kan latensen förbättras? Just nu är maskinen på gränsen till användbar. Minsta förbättring skulle göra den ruskigt bra.
+* Specialtecken. Vilka tecken har jag tillgång till? Ett bra filformat att kunna skriva är Markdown. Då krävs att ett antal specialtecken kan användas.
+
+---
+
 ## Projektetspecifikationer
 
 ### 1. Prioriteringar (Kärnfokus)
@@ -11,7 +22,7 @@ För att projektet ska vara intressant och framgångsrikt måste vi kompromissl�
 1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
 3. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
-4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas. Tänk skrivmaskin: om ordet är satt på papper så sitter det på papperet.
+4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas.
 
 ---
 
@@ -51,13 +62,11 @@ För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi
 
 * **Skrivläge (A2-mode):** Under aktivt skrivande körs skärmen i det monokroma, asynkrona **A2 (Animation)-läget**.
 * **Helskärms-refresh:** En fullständig uppdatering (flash) finns tillgänglig via F5.
-* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre tredjedelen av skärmen och prompten följer med. Vi behöver prova ut hur många rader texten ska hoppa.
+* **Skrivposition (jump)** För att uppdatera så lite av skärmen som möjligt skall skrivprompten få nå botten av skrivytan innan texten hoppar upp till den övre delen av skärmen och prompten följer med.
 
 #### Skrivprogram
 
 Gränssnittet skall vara minimalt. I stort sett bara textytan. Piltangenterna ska kunna stega horisontellt och vertikalt för enklaste navigering. Funktionsknapparna skall nyttjas för att utföra specifika åtgärder; öppna- och skapa dokument, spara, synkronisera och liknande.
-
-Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning, annan statistik eller andra uppgifter.
 
 #### Nätverk & Synk (Tailscale + NAS/Filserver)
 
@@ -75,13 +84,21 @@ Möjligen vore en statusrad längst ner på skärmen användbar för ordräkning
 
 ## Framtida förbättringar
 
-* **Fontstorlekar:** Vi kan lägga till fler fontstorlekar före att ge användaren mer flexibilitet. En mindre font kan också förbättra latensen, eventuellt. Den första storlek vi lägger till skall vara hälften så stor som den nuvarande fontstorleken, det gör det enkelt att beräkna antalet kollumner och rader. Helst ska våra marginaler förbli desamma. Det torde inte vara ett problem att ha flera fontstorlekar i RAM.
+* **Fontstorlekar:** Vi kan lägga till fler fontstorlekar före att ge användaren mer flexibilitet. En mindre font kan potentiellt förbättra latensen. Försök har genomförts med en hälften så hög font, men det är för litet för ögat. Helst ska våra marginaler förbli desamma, men det är inget krav. Statusraden blir ju lägre... Det torde dock inte vara ett problem att ha flera fontstorlekar i RAM.
 * **Integrerat tangentbord:** Vi kan lägga till ett integrerat tangentbord som inte kräver en separat USB-anslutning. Detta skulle öka batteritiden.
+
+---
+
+## Feature creep
+
+* Tankar på alltför avancerad redigering. Det är inte Wimwriters huvudsyfte. Redigering må ske på dator.
 
 ---
 
 ## Upptäckter
 * **Kompilering och drivrutiner:** Vi måste säkerställa att rätt flaggor (`-D BCM`) finns i vår Makefil. Detta aktiverade de nödvändiga SPI-drivrutinerna för BCM2835-biblioteket.
+* **Stitching:** Att stränga ihop text för att skicka större sjok till displayen är väldigt effektivt.
+* **Skärmrotation:** Då skärmen rent fysiskt står uppochner så behöver vi kompensera för det. Vi får själva se till att vända bokstäver rätt, se till att skrivriktningen är rätt och att allt renderas med det fysiska nedre högra hörnet som utgångspunkt.
 
 ---
 *Projektet upprättad 2026-07-20.*

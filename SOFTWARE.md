@@ -85,24 +85,13 @@ Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess inn
 
 En *manual override* som låter dig slå på/av WiFi, till exempel för administration över SSH. När WiFi är på skall statusraden vara igång hela tiden och visa "WiFi".
 
-## Spara state
-
-Vi behöver hålla reda på ett par saker:
-* Vad finns egentligen på skärmen?
-* Vilka filer har jag senast jobbat med, så att F3 kan cykla mellan dem?
-* Var står skrivprompten?
-* Hur länge har användaren varit inaktiv?
-* När skapades senaste backup?
-
 ## Navigera
 
 Vi behöver se till att pilarna, page up/down, home och end fungerar som förväntat. Även med mod-tangenter (Ctrl + Home/End, Ctrl + Pil H/V). 
 
 ## Redigera text
 
-Kravet på lägsta möjliga latens lättas i samband med redigering. Det kan kännas naturligt även om det går lite långsammare vid markering o. dyl. Det är heller inte maskinens främsta syfte varför vi kan kompromissa med detta med gott samvete.
-
-Om jag ställer prompten någon annanstans än i slutet av texten (för att redigera) så ska texten *efter* prompten suddas bort från skärmen medan jag skriver. När jag sedan använder andra tangenter (pilar, Home, End, Funktionstangenter) eller blir inaktiv så ska all text renderas igen.
+Om jag ställer prompten någon annanstans än i slutet av texten (för att redigera) så ska texten *efter* prompten suddas bort från skärmen medan jag skriver. När jag sedan använder andra tangenter (pilar, Home, End, Funktionstangenter) eller blir inaktiv så ska all text renderas igen. Här behöver vi tillämpa stitching igen.
 
 Alla tangenter ska fungera som förväntat, inklusive insert, backspace och delete (Även Ctrl + Backspace/Delete).
 ---
