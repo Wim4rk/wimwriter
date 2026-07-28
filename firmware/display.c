@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "display.h"
-#include "wim_font_courier.h"
+// #include "wim_font_courier.h"
+#include "wim_font_16x32_prestige.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
@@ -193,34 +194,20 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Minneshantering på Raspberry Pi
+    // 1. Flytta upp de sista kontextraderna till toppen av bufferten
     size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
     memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
 
+    // 2. Rensa hela utrymmet under kontextraderna med mellanslag
     size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
     memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
 
+    // 3. Sätt markören på första lediga rad efter kontexten
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // 2. Skärmuppdatering: Radera hela ytan under JUMP_LINES i ett svep
-    int clear_start_y = get_physical_y(MAX_ROWS - 1); // Bottenradens Y
-    int clear_height = (MAX_ROWS - JUMP_LINES) * GLYPH_H;
-    int clear_width = MAX_COLS * GLYPH_W;
-    int clear_start_x = get_physical_x(MAX_COLS - 1); // Vänstermarginalen (index är omvänt)
-
-    clear_area(clear_start_x, clear_start_y, clear_width, clear_height, target_addr);
-
-    // 3. Rita enbart ut kontextraderna
-    for (int row = 0; row < JUMP_LINES; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            if (buffer[row][col] != ' ') {
-                int px = get_physical_x(col);
-                int py = get_physical_y(row);
-                render_char(buffer[row][col], px, py, target_addr);
-            }
-        }
-    }
+    // Skicka med target_addr i anropet
+        stitch_and_render_screen(buffer, target_addr);
 }
 
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -251,7 +238,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
 
     // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_x = get_physical_x(break_col + 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
 
@@ -285,7 +272,7 @@ void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
             // Vänder arrayen baklänges för att rotera tecknet 180 grader
-            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
+            pre_flipped_glyphs[c][i] = wim_font_16x32[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
 }
@@ -307,4 +294,62 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
         render_char(text[i], current_x, text_y, target_addr);
         current_x += GLYPH_W;
     }
+}
+
+void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            char c = buffer[row][col];
+            if (c == ' ' || c == '\0') continue;
+
+            int start_x = MARGIN_LEFT + (col * GLYPH_W);
+            int start_y = MARGIN_TOP + (row * GLYPH_H);
+
+            // Använd din existerande font-cache
+            const UBYTE *glyph_bitmap = pre_flipped_glyphs[(int)c];
+
+            for (int h = 0; h < GLYPH_H; h++) {
+                int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
+                memcpy(&full_screen_buffer[buffer_offset],
+                       &glyph_bitmap[h * GLYPH_W],
+                       GLYPH_W);
+            }
+        }
+    }
+
+    // Skicka blocket till IT8951 (motsvarande logiken i din äldre redraw_buffer)
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = full_screen_buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = 0;
+    area_info.Area_Y = 0;
+    area_info.Area_W = SCREEN_WIDTH;
+    area_info.Area_H = SCREEN_HEIGHT;
+
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    fast_spi_write_nbyte(full_screen_buffer, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Trigga uppdatering
+    EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
 }

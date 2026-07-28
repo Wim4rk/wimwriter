@@ -43,7 +43,7 @@ Använd funktionsknapparna enligt fastställd praxis.Tänk CUA-standard (Common 
 | F3     | Öppna     | Öppna dokument/kataloger (Cycklar mellan textfiler) |
 | F4     | Ny fil    | Nytt dokument |
 | F5     | Uppd disp | Tvingar fullständig uppdatering av skärmen |
-| F6     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
+| F6     | Fontsize  | Reserverad för ändring av fontstorlek |
 | F7     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F8     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F9     | Synk.     | Synkronisera enligt program/rutin  |
@@ -74,7 +74,7 @@ Rensa bara skärmen, ge mig en ny skrivyta. Möjligtvis en notering i statusrade
 
 ### F5 - Uppdatera skärmen
 
-Fullständig uppdatering av skärmen, INIT(Mode 0). Snabbast möjliga återställning av skärmens innehåll.
+Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess innehåll återställs så fort som möjligt.
 
 ### F9 - Synkronisera
 

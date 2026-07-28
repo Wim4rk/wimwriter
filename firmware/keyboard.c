@@ -84,7 +84,7 @@ char keyboard_get_char(struct input_event *ev) {
         return 0;
     }
 
-    // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)[cite: 1]
+    // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)
     if (ev->value == 1 || ev->value == 2) {
         if (ev->code < 128) {
             char default_char = map_default[ev->code];

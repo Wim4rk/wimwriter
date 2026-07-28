@@ -86,10 +86,15 @@ static int current_file_index = 0;
 static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 static void show_file_in_status_bar(void) {}
-static void hide_status_bar_and_redraw(void) {}
 static void show_next_file(void) {}
 static void save_to_sd(const char *filename) {}
 static void force_full_redraw(void) {}
+
+static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
+    // Om du vill implementera städningen direkt kan du lägga in:
+    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
+    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+}
 
 // Bygger strängen och skickar den till skärmen
 static void update_status_bar_visuals(UDOUBLE target_addr) {
@@ -118,7 +123,7 @@ static void clear_filename_buffer(void) {
     memset(current_filename, 0, sizeof(current_filename));
 }
 
-static void generate_default_file_name(void){
+static void generate_default_filename(void){
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     snprintf(current_filename, sizeof(current_filename), "wimwriter - %04d-%02d-%02d_%02d%02d.txt",
@@ -213,17 +218,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
                     save_to_sd(current_filename);
                 }
             }
-            else if (key_code == KEY_F2) {
-                // Om filen saknar namn, gå till namngivning[cite: 2]
-                if (strlen(current_filename) == 0) {
-                    is_suggested_name = true;
-                    // TODO: Generera "wimwriter - [tidpunkt].txt" i current_filename
-                    // TODO: Visa statusraden
-                    current_state = STATE_NAMING_FILE;
-                } else {
-                    save_to_sd(current_filename);
-                }
-            }
             else if (key_code == KEY_F3) {
                 previous_file_index = current_file_index;
                 show_file_in_status_bar();
@@ -232,8 +226,8 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
-                if (c > 0 || key_code == KEY_BACKSPACE) {
-                    process_text_input(c > 0 ? c : 127, text_buffer, cursor_row, cursor_col, target_addr);
+                if (c > 0) {
+                    process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr);
                 }
             }
             break;
@@ -251,11 +245,11 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[
             }
             else if (key_code == KEY_ESC) {
                 current_file_index = previous_file_index;
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
             }
             else if (c > 0) {
-                hide_status_bar_and_redraw();
+                hide_status_bar_and_redraw(target_addr);
                 // TODO: load_file_into_buffer(...)
                 force_full_redraw();
                 current_state = STATE_EDITING;
@@ -347,6 +341,9 @@ void keyboard_close(int fd);
 // Tolka eventet och returnera tecknet (returnerar 0 om ogiltigt/osynligt)
 char keyboard_get_char(struct input_event *ev);
 
+bool keyboard_is_ctrl_pressed(void);
+bool keyboard_is_shift_pressed(void);
+
 #endif
 -e 
 ========== SLUT PÅ: ./firmware/keyboard.h ==========
@@ -365,23 +362,30 @@ char keyboard_get_char(struct input_event *ev);
 #define MARGIN_TOP 44
 #define MARGIN_BOTTOM 68
 
-#define MAX_COLS 41
-#define MAX_ROWS 15
+// #define MAX_COLS 41
+// #define MAX_ROWS 15
 
-#define GLYPH_W 32
-#define GLYPH_H 64
-#define GLYPH_SIZE_BYTES 2048
+#define MAX_COLS 82
+#define MAX_ROWS 30
+
+// #define GLYPH_W 32
+// #define GLYPH_H 64
+
+#define GLYPH_W 16
+#define GLYPH_H 32
+#define GLYPH_SIZE_BYTES 512
 
 #define IT8951_A2_MODE 6
 
 // Parameter för hur många rader som bevaras vid Jump
-#define JUMP_LINES 2
+#define JUMP_LINES 4
 
 #define FULL_SCREEN_BUFFER_SIZE ((SCREEN_WIDTH * SCREEN_HEIGHT) / 8)
 
 void init_display(UDOUBLE *target_addr);
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 void cleanup_display(void);
+void clear_area(int x, int y, int width, int height, UDOUBLE target_addr);
 void init_glyph_cache(void); // Lägg till denna rad
 void render_char(char c, int x, int y, UDOUBLE target_addr);
 // I display.h
@@ -394,6 +398,12 @@ void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
+// Skärmbufferten som speglar dokumentet (Vyn)
+char view_buffer[MAX_ROWS][MAX_COLS];
+
+// Den statiska bildbufferten i RAM
+uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
 #endif
 -e 
 ========== SLUT PÅ: ./firmware/display.h ==========
@@ -402,7 +412,8 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 #include <stdio.h>
 #include <string.h>
 #include "display.h"
-#include "wim_font_courier.h"
+// #include "wim_font_courier.h"
+#include "wim_font_16x32_prestige.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
@@ -584,42 +595,44 @@ void cleanup_display(void) {
 }
 
 int get_physical_x(int col) {
-    return SCREEN_WIDTH - MARGIN_RIGHT - ((col + 1) * GLYPH_W);
+    return MARGIN_LEFT + (col * GLYPH_W);
 }
 
 int get_physical_y(int row) {
-    return SCREEN_HEIGHT - MARGIN_BOTTOM - ((row + 1) * GLYPH_H);
+    return MARGIN_TOP + (row * GLYPH_H);
 }
 
-void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Minneshantering på Raspberry Pi
+void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+    // 1. Flytta upp de sista kontextraderna till toppen av bufferten
     size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
     memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
 
+    // 2. Rensa hela utrymmet under kontextraderna med mellanslag
     size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
     memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
 
+    // 3. Sätt markören på första lediga rad efter kontexten
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // 2. Skärmuppdatering: Radera hela ytan under JUMP_LINES i ett svep
-    int clear_start_y = get_physical_y(MAX_ROWS - 1); // Bottenradens Y
-    int clear_height = (MAX_ROWS - JUMP_LINES) * GLYPH_H;
-    int clear_width = MAX_COLS * GLYPH_W;
-    int clear_start_x = get_physical_x(MAX_COLS - 1); // Vänstermarginalen (index är omvänt)
+    // 4. Bygg bilden i RAM och skicka till IT8951
+    stitch_and_render_screen(buffer);
+}
 
-    clear_area(clear_start_x, clear_start_y, clear_width, clear_height, target_addr);
+void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+    // 1. Rensa hela bufferten
+    memset(buffer, ' ', MAX_ROWS * MAX_COLS * sizeof(char));
 
-    // 3. Rita enbart ut kontextraderna
-    for (int row = 0; row < JUMP_LINES; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            if (buffer[row][col] != ' ') {
-                int px = get_physical_x(col);
-                int py = get_physical_y(row);
-                render_char(buffer[row][col], px, py, target_addr);
-            }
-        }
-    }
+    // 2. Läs in text från SD-kortet.
+    // Här lägger du din inläsningslogik som fyller bufferten från rad 0
+    // fram till MAX_ROWS - JUMP_LINES - 1.
+
+    // 3. Sätt markören på den första lediga raden i bottenmarginalen
+    *cursor_row = MAX_ROWS - JUMP_LINES;
+    *cursor_col = 0;
+
+    // 4. Uppdatera skärmen med det inlästa dokumentet
+    stitch_and_render_screen(buffer);
 }
 
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -650,7 +663,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
 
     // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    int clear_x = get_physical_x(MAX_COLS - 1);
+    int clear_x = get_physical_x(break_col + 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
 
@@ -682,9 +695,9 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
 // Förbereder font-cachen i RAM. Anropas en gång vid uppstart.
 void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
-        // En 180-graders rotation är detsamma som att läsa arrayen baklänges
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
-            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
+            // Vänder arrayen baklänges för att rotera tecknet 180 grader
+            pre_flipped_glyphs[c][i] = wim_font_16x32[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
 }
@@ -706,6 +719,38 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
         render_char(text[i], current_x, text_y, target_addr);
         current_x += GLYPH_W;
     }
+}
+
+void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS]) {
+    // 1. Rensa bildbufferten (fyll med 0xFF för vit bakgrund)
+    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+
+    // 2. Iterera över skärmbuffertens rader och kolumner
+    for (int row = 0; row < MAX_ROWS; row++) {
+        for (int col = 0; col < MAX_COLS; col++) {
+            char c = buffer[row][col];
+
+            // Ignorera tomma tecken
+            if (c == ' ' || c == '\0') continue;
+
+            // Beräkna absoluta startkoordinater för tecknet
+            int start_x = MARGIN_LEFT + (col * GLYPH_W);
+            int start_y = MARGIN_TOP + (row * GLYPH_H);
+
+            uint8_t* glyph_bitmap = get_glyph_from_cache(c);
+
+            // 3. Kopiera in tecknets bitmapp, rad för rad, i den stora bufferten
+            for (int h = 0; h < GLYPH_H; h++) {
+                int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
+                memcpy(&full_screen_buffer[buffer_offset],
+                       &glyph_bitmap[h * GLYPH_W],
+                       GLYPH_W);
+            }
+        }
+    }
+
+    // 4. Blocköverföring via SPI
+    send_buffer_to_it8951(full_screen_buffer, sizeof(full_screen_buffer));
 }
 -e 
 ========== SLUT PÅ: ./firmware/display.c ==========
@@ -747,6 +792,7 @@ void fast_spi_write_nbyte(UBYTE *pData, UDOUBLE len);
 // Håll koll på modifier-tangenter
 static bool shift_pressed = false;
 static bool caps_locked = false;
+static bool ctrl_pressed = false;
 
 // Mappning för standardtangenter (Svensk fysisk layout -> 7-bit ASCII)
 // Observera: 'å' = '}', 'ä' = '{', 'ö' = '|' i din 7-bitars standard
@@ -796,9 +842,14 @@ void keyboard_close(int fd) {
     if (fd != -1) close(fd);
 }
 
-// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 2]
+// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 1, 2]
 bool keyboard_is_shift_pressed(void) {
     return shift_pressed;
+}
+
+// Publik funktion så editor.c kan kontrollera ctrl (t.ex. Ctrl + Backspace)
+bool keyboard_is_ctrl_pressed(void) {
+    return ctrl_pressed;
 }
 
 char keyboard_get_char(struct input_event *ev) {
@@ -807,6 +858,13 @@ char keyboard_get_char(struct input_event *ev) {
         shift_pressed = (ev->value == 1 || ev->value == 2);
         return 0;
     }
+
+    // Hantera Ctrl-tangenterna
+    if (ev->code == KEY_LEFTCTRL || ev->code == KEY_RIGHTCTRL) {
+        ctrl_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+
     if (ev->code == KEY_CAPSLOCK && ev->value == 1) {
         caps_locked = !caps_locked;
         return 0;
@@ -817,7 +875,7 @@ char keyboard_get_char(struct input_event *ev) {
         if (ev->code < 128) {
             char default_char = map_default[ev->code];
 
-            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
+            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)[cite: 1]
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
                                default_char == '{' || default_char == '}' || default_char == '|';
 
@@ -884,7 +942,7 @@ int main() {
 
     // Tillstånd för prompten
     bool prompt_visible = false;
-    int prompt_timeout_ms = 500; // Halv sekund innan prompten ritas ut
+    int prompt_timeout_ms = 1200; // Halv sekund innan prompten ritas ut
 
     // Konfigurera poll
     struct pollfd fds[1];
@@ -900,7 +958,7 @@ int main() {
         int ret = poll(fds, 1, prompt_timeout_ms);
 
         if (ret == 0) {
-            // TIMEOUT: 500 ms av inaktivitet har passerat
+            // TIMEOUT: inaktivitet har passerat
             if (!prompt_visible) {
                 int px = get_physical_x(cursor_col);
                 int py = get_physical_y(cursor_row);
