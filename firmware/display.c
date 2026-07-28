@@ -217,32 +217,71 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     if (*cursor_col < MAX_COLS) return;
 
+    // Om raden slutar på ett mellanslag struntar vi i att rendera det på ny rad.
+    // Vi bara flyttar ner markören och nollställer kolumnen.
     if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
         *cursor_col = 0;
         (*cursor_row)++;
+
+        if (*cursor_row >= MAX_ROWS) {
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        }
+        return;
+    }
+
+    // Om raden slutar på ett bindestreck stannar det på den övre raden.
+    // Vi flyttar bara ner markören utan att flytta några tecken.
+    if (buffer[*cursor_row][MAX_COLS - 1] == '-') {
+        *cursor_col = 0;
+        (*cursor_row)++;
+
+        if (*cursor_row >= MAX_ROWS) {
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        }
         return;
     }
 
     int break_col = MAX_COLS - 1;
-    while (break_col > 0 && buffer[*cursor_row][break_col] != ' ') {
+
+    // Leta bakåt efter ett naturligt brytmönster (mellanslag eller bindestreck)
+    while (break_col > 0 && buffer[*cursor_row][break_col] != ' ' && buffer[*cursor_row][break_col] != '-') {
         break_col--;
     }
 
     if (break_col == 0) {
+        // Om inget brytmärkes hittas tvingas radbrytning på sista kolumnen
         *cursor_col = 0;
         (*cursor_row)++;
+
+        if (*cursor_row >= MAX_ROWS) {
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        }
         return;
     }
 
-    int chars_to_move = MAX_COLS - (break_col + 1);
+    // Om vi bröt vid ett bindestreck ska bindestrecket stanna kvar (index break_col),
+    // och vi flyttar endast det som kommer efter. Om vi bröt vid ett mellanslag
+    // hoppar vi över själva mellanslagsindexet.
+    int start_move = (buffer[*cursor_row][break_col] == '-') ? break_col + 1 : break_col + 1;
+    int chars_to_move = MAX_COLS - start_move;
+
+    if (chars_to_move <= 0) {
+        *cursor_col = 0;
+        (*cursor_row)++;
+        if (*cursor_row >= MAX_ROWS) {
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        }
+        return;
+    }
+
     char temp_word[chars_to_move];
 
     // 1. Minneshantering i RAM
-    memcpy(temp_word, &buffer[*cursor_row][break_col + 1], chars_to_move);
-    memset(&buffer[*cursor_row][break_col + 1], '\0', chars_to_move);
+    memcpy(temp_word, &buffer[*cursor_row][start_move], chars_to_move);
+    memset(&buffer[*cursor_row][start_move], ' ', MAX_COLS - start_move);
 
-    // 2. Skärmoperation: Radera ordets tidigare placering i ett svep
-    int clear_x = get_physical_x(break_col + 1);
+    // 2. Skärmoperation: Radera ordets tidigare placering i ett svep i A2-läge
+    int clear_x = get_physical_x(MAX_COLS - 1);
     int clear_y = get_physical_y(*cursor_row);
     int clear_width = chars_to_move * GLYPH_W;
 
@@ -252,16 +291,13 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     (*cursor_row)++;
     *cursor_col = 0;
 
-    // Fånga upp om vi nått skärmens slut innan vi skriver till RAM.
-    // Texten hoppar upp och skrivprompten placeras på den definierade raden[cite: 2].
     if (*cursor_row >= MAX_ROWS) {
         display_jump(buffer, cursor_row, cursor_col, target_addr);
     }
 
     memcpy(&buffer[*cursor_row][0], temp_word, chars_to_move);
 
-    // 4. Skärmoperation: Rita ut ordet på den nya raden
-    // Utritningen drar nytta av kontrollerns snabba A2-läge[cite: 1, 2].
+    // 4. Skärmoperation: Rita ut det flyttade ordet på den nya raden
     for (int i = 0; i < chars_to_move; i++) {
         int px = get_physical_x(i);
         int py = get_physical_y(*cursor_row);
@@ -310,16 +346,17 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
             char c = buffer[row][col];
             if (c == ' ' || c == '\0') continue;
 
-            int start_x = MARGIN_LEFT + (col * GLYPH_W);
-            int start_y = MARGIN_TOP + (row * GLYPH_H);
+            // Använd dina nya funktioner för att fastställa de exakta, spegelvända koordinaterna
+            int start_x = get_physical_x(col);
+            int start_y = get_physical_y(row);
 
             const UBYTE *glyph_bitmap = pre_flipped_glyphs[(int)c];
 
             for (int h = 0; h < GLYPH_H; h++) {
                 int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
                 memcpy(&full_screen_buffer[buffer_offset],
-                       &glyph_bitmap[h * GLYPH_W],
-                       GLYPH_W);
+                        &glyph_bitmap[h * GLYPH_W],
+                        GLYPH_W);
             }
         }
     }
