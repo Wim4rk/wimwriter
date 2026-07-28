@@ -22,7 +22,7 @@
 #define IT8951_A2_MODE 6
 
 // Parameter för hur många rader som bevaras vid Jump
-#define JUMP_LINES 4
+#define JUMP_LINES 2
 
 #define FULL_SCREEN_BUFFER_SIZE ((SCREEN_WIDTH * SCREEN_HEIGHT) / 8)
 
