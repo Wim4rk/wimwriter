@@ -295,8 +295,10 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
 }
 
 void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+    // 1. Rensa den stora bildbufferten med vitt (0xFF för 8bpp)
     memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
 
+    // 2. Iterera över den logiska skärmbufferten och pussla in tecknen i RAM
     for (int row = 0; row < MAX_ROWS; row++) {
         for (int col = 0; col < MAX_COLS; col++) {
             char c = buffer[row][col];
@@ -305,7 +307,6 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
             int start_x = MARGIN_LEFT + (col * GLYPH_W);
             int start_y = MARGIN_TOP + (row * GLYPH_H);
 
-            // Använd din existerande font-cache
             const UBYTE *glyph_bitmap = pre_flipped_glyphs[(int)c];
 
             for (int h = 0; h < GLYPH_H; h++) {
@@ -317,7 +318,7 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
         }
     }
 
-    // Skicka blocket till IT8951 (motsvarande logiken i din äldre redraw_buffer)
+    // 3. Konfigurera bildöverföring till IT8951
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
 
@@ -332,6 +333,7 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
     area_info.Area_W = SCREEN_WIDTH;
     area_info.Area_H = SCREEN_HEIGHT;
 
+    // 4. Tala om för kontrollern vart datan ska och öppna kommunikationen
     EPD_IT8951_SetTargetMemoryAddr(target_addr);
     EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
 
@@ -343,11 +345,12 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
     DEV_SPI_WriteByte(write_preamble);
     EPD_IT8951_ReadBusy();
 
+    // 5. Blocköverföring via fast_spi
     fast_spi_write_nbyte(full_screen_buffer, SCREEN_WIDTH * SCREEN_HEIGHT);
 
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
 
-    // Trigga uppdatering
+    // 6. Trigga uppdatering av hela ytan (A2 mode är 6 för denna HAT)[cite: 1]
     EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
 }

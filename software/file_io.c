@@ -3,18 +3,14 @@
 #include <stdio.h>
 #include <string.h>
 
-void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
-    // 1. Rensa hela bufferten
+void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     memset(buffer, ' ', MAX_ROWS * MAX_COLS * sizeof(char));
 
-    // 2. Läs in text från SD-kortet.
-    // Här lägger du din inläsningslogik som fyller bufferten från rad 0
-    // fram till MAX_ROWS - JUMP_LINES - 1.
+    // TODO: Din logik för att läsa från SD-kortet
 
-    // 3. Sätt markören på den första lediga raden i bottenmarginalen
     *cursor_row = MAX_ROWS - JUMP_LINES;
     *cursor_col = 0;
 
-    // 4. Uppdatera skärmen med det inlästa dokumentet
-    stitch_and_render_screen(buffer);
+    // Skicka med target_addr här
+    stitch_and_render_screen(buffer, target_addr);
 }
