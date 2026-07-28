@@ -32,7 +32,7 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     load_info.Source_Buffer_Addr = white_buffer;
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_180;
+    load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
     area_info.Area_X = x;
@@ -99,7 +99,7 @@ void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
     load_info.Source_Buffer_Addr = screen_frame_buffer;
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_180;
+    load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
     area_info.Area_X = 0;
@@ -137,7 +137,7 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     load_info.Source_Buffer_Addr = (UBYTE*)pre_flipped_glyphs[(int)c];
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_180;
+    load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
     area_info.Area_X = x;
@@ -282,7 +282,8 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
 void init_glyph_cache(void) {
     for (int c = 32; c < 127; c++) {
         for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
-            pre_flipped_glyphs[c][i] = wim_font_32x64[c][i];
+            // Vänder arrayen baklänges för att rotera tecknet 180 grader
+            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
         }
     }
 }
