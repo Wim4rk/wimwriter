@@ -43,7 +43,7 @@ int main() {
 
     // Tillstånd för prompten
     bool prompt_visible = false;
-    int prompt_timeout_ms = 500; // Halv sekund innan prompten ritas ut
+    int prompt_timeout_ms = 1200; // Halv sekund innan prompten ritas ut
 
     // Konfigurera poll
     struct pollfd fds[1];
@@ -59,7 +59,7 @@ int main() {
         int ret = poll(fds, 1, prompt_timeout_ms);
 
         if (ret == 0) {
-            // TIMEOUT: 500 ms av inaktivitet har passerat
+            // TIMEOUT: inaktivitet har passerat
             if (!prompt_visible) {
                 int px = get_physical_x(cursor_col);
                 int py = get_physical_y(cursor_row);

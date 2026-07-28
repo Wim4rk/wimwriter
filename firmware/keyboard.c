@@ -6,6 +6,7 @@
 // Håll koll på modifier-tangenter
 static bool shift_pressed = false;
 static bool caps_locked = false;
+static bool ctrl_pressed = false;
 
 // Mappning för standardtangenter (Svensk fysisk layout -> 7-bit ASCII)
 // Observera: 'å' = '}', 'ä' = '{', 'ö' = '|' i din 7-bitars standard
@@ -55,9 +56,14 @@ void keyboard_close(int fd) {
     if (fd != -1) close(fd);
 }
 
-// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 2]
+// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 1, 2]
 bool keyboard_is_shift_pressed(void) {
     return shift_pressed;
+}
+
+// Publik funktion så editor.c kan kontrollera ctrl (t.ex. Ctrl + Backspace)
+bool keyboard_is_ctrl_pressed(void) {
+    return ctrl_pressed;
 }
 
 char keyboard_get_char(struct input_event *ev) {
@@ -66,17 +72,24 @@ char keyboard_get_char(struct input_event *ev) {
         shift_pressed = (ev->value == 1 || ev->value == 2);
         return 0;
     }
+
+    // Hantera Ctrl-tangenterna
+    if (ev->code == KEY_LEFTCTRL || ev->code == KEY_RIGHTCTRL) {
+        ctrl_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+
     if (ev->code == KEY_CAPSLOCK && ev->value == 1) {
         caps_locked = !caps_locked;
         return 0;
     }
 
-    // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)
+    // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)[cite: 1]
     if (ev->value == 1 || ev->value == 2) {
         if (ev->code < 128) {
             char default_char = map_default[ev->code];
 
-            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)
+            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)[cite: 1]
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
                                default_char == '{' || default_char == '}' || default_char == '|';
 
