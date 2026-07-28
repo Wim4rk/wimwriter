@@ -48,9 +48,9 @@ void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_
 void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr);
 
 // Skärmbufferten som speglar dokumentet (Vyn)
-char view_buffer[MAX_ROWS][MAX_COLS];
+extern char view_buffer[MAX_ROWS][MAX_COLS];
 
 // Den statiska bildbufferten i RAM
-uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+extern uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
 #endif

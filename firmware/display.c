@@ -9,6 +9,10 @@
 
 extern void EPD_IT8951_ReadBusy(void);
 
+// Allokera minnet för de globala variablerna här
+char view_buffer[MAX_ROWS][MAX_COLS];
+uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][GLYPH_SIZE_BYTES];
 
