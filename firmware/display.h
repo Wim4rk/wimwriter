@@ -80,6 +80,7 @@ void redraw_buffer(char *buffer, UDOUBLE target_addr);
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr);
+void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr);
 
 void calculate_layout_points(int font_w, int font_h);
 

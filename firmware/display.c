@@ -60,9 +60,6 @@ void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE 
 
 void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     if (width <= 0 || height <= 0) return;
-
-    int size = width * height;
-
     // Statisk buffert för att undvika malloc i skrivloopen.
     // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
     static UBYTE white_buffer[98500];
