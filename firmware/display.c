@@ -6,14 +6,20 @@
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
 
+ActiveFont current_font;
+
+uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
 extern void EPD_IT8951_ReadBusy(void);
 
-// I display.c
+char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
+void init_glyph_cache(void);
+uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
 int current_max_cols = 0;
 int current_max_rows = 0;
 int point_x[ABSOLUTE_MAX_COLS];
 int point_y[ABSOLUTE_MAX_ROWS];
-void init_glyph_cache(void);
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
@@ -339,12 +345,12 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
 // Funktion för att byta font dynamiskt via F6 eller vid uppstart
 void set_active_font(int font_choice) {
     if (font_choice == 1) {
-        current_font.data = (const uint8_t*)font_16x28;
+        current_font.data = (const uint8_t*)wim_font_16x28;
         current_font.width = FONT_16X28_W;
         current_font.height = FONT_16X28_H;
         current_font.bytes_per_char = FONT_16X28_BYTES;
     } else {
-        current_font.data = (const uint8_t*)font_24x41;
+        current_font.data = (const uint8_t*)wim_font_24x41;
         current_font.width = FONT_24X41_W;
         current_font.height = FONT_24X41_H;
         current_font.bytes_per_char = FONT_24X41_BYTES;

@@ -50,7 +50,7 @@ extern int current_max_rows;
 
 
 // Den statiska bildbufferten i RAM för helskärmsuppdateringar
-extern uint8_t full_screen_buffer[FULL_SCREEN_BUFFER_SIZE];
+extern uint8_t full_screen_buffer[];
 
 // ---------------------------------------------------------
 // Initiering och grundläggande skärmstyrning

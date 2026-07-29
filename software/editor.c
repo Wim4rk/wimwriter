@@ -80,7 +80,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 *cursor_col = current_max_cols - 1;
 
                 // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
-                while (*cursor_col > 0 && text_buffer[*cursor_row][*cursor_col] == '\0') {
+            while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
                     (*cursor_col)--;
                 }
             } else {
@@ -104,7 +104,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 int py = get_physical_y(*cursor_row);
 
                 // Lagra i RAM och rita ut
-                text_buffer[*cursor_row][*cursor_col] = c;
+                BUF_AT(text_buffer, *cursor_row, *cursor_col) = c;
                 render_char(c, px, py, target_addr);
 
                 (*cursor_col)++;
