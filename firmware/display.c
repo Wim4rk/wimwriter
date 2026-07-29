@@ -8,8 +8,6 @@
 
 ActiveFont current_font;
 
-uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
-
 extern void EPD_IT8951_ReadBusy(void);
 
 char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
@@ -23,6 +21,42 @@ int point_y[ABSOLUTE_MAX_ROWS];
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
+
+void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode) {
+    IT8951_Load_Img_Info load_info;
+    IT8951_Area_Img_Info area_info;
+
+    load_info.Source_Buffer_Addr = buffer;
+    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Pixel_Format = IT8951_8BPP;
+    load_info.Rotate = IT8951_ROTATE_0;
+    load_info.Target_Memory_Addr = target_addr;
+
+    area_info.Area_X = x;
+    area_info.Area_Y = y;
+    area_info.Area_W = w;
+    area_info.Area_H = h;
+
+    EPD_IT8951_SetTargetMemoryAddr(target_addr);
+    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
+
+    UWORD write_preamble = 0x0000;
+    EPD_IT8951_ReadBusy();
+    DEV_Digital_Write(EPD_CS_PIN, LOW);
+
+    DEV_SPI_WriteByte(write_preamble >> 8);
+    DEV_SPI_WriteByte(write_preamble);
+    EPD_IT8951_ReadBusy();
+
+    // Blocköverföringen
+    fast_spi_write_nbyte(buffer, w * h);
+
+    DEV_Digital_Write(EPD_CS_PIN, HIGH);
+    EPD_IT8951_LoadImgEnd();
+
+    // Trigga utritningen i valt läge (t.ex. A2_MODE)
+    EPD_IT8951_Display_Area(x, y, w, h, update_mode);
+}
 
 void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     if (width <= 0 || height <= 0) return;
@@ -39,84 +73,13 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
         buffer_initialized = true;
     }
 
-    IT8951_Load_Img_Info load_info;
-    IT8951_Area_Img_Info area_info;
-
-    load_info.Source_Buffer_Addr = white_buffer;
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-    load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_0;
-    load_info.Target_Memory_Addr = target_addr;
-
-    area_info.Area_X = x;
-    area_info.Area_Y = y;
-    area_info.Area_W = width;
-    area_info.Area_H = height;
-
-    // Skicka "damage box" till IT8951
-    EPD_IT8951_SetTargetMemoryAddr(target_addr);
-    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
-
-    UWORD write_preamble = 0x0000;
-    EPD_IT8951_ReadBusy();
-    DEV_Digital_Write(EPD_CS_PIN, LOW);
-
-    DEV_SPI_WriteByte(write_preamble >> 8);
-    DEV_SPI_WriteByte(write_preamble);
-    EPD_IT8951_ReadBusy();
-
-    // Blocköverföring av vita pixlar
-    fast_spi_write_nbyte(white_buffer, size);
-
-    DEV_Digital_Write(EPD_CS_PIN, HIGH);
-    EPD_IT8951_LoadImgEnd();
-
-    // Tvinga uppdatering i A2-läge för att rensa ytan direkt
-    EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
+    send_and_display_buffer(white_buffer, x, y, width, height, target_addr, IT8951_A2_MODE);
 }
 
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
     // Filtrera bort icke-utskrivbara tecken för att spara cykler
     if (c < 32 || c > 126) return;
-
-    IT8951_Load_Img_Info load_info;
-    IT8951_Area_Img_Info area_info;
-
-    // Peka på det förberedda tecknet i den roterade RAM-cachen
-    load_info.Source_Buffer_Addr = (UBYTE*)pre_flipped_glyphs[(int)c];
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-    load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_0;
-    load_info.Target_Memory_Addr = target_addr;
-
-    // Hämta dynamiska dimensioner från den aktiva fontstrukturen
-    area_info.Area_X = x;
-    area_info.Area_Y = y;
-    area_info.Area_W = current_font.width;
-    area_info.Area_H = current_font.height;
-
-    // Konfigurera kontrollern för den specifika minnesytan
-    EPD_IT8951_SetTargetMemoryAddr(target_addr);
-    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
-
-    // Förbered SPI-överföring (preamble)
-    UWORD write_preamble = 0x0000;
-    EPD_IT8951_ReadBusy();
-    DEV_Digital_Write(EPD_CS_PIN, LOW);
-
-    DEV_SPI_WriteByte(write_preamble >> 8);
-    DEV_SPI_WriteByte(write_preamble);
-    EPD_IT8951_ReadBusy();
-
-    // Gör blocköverföringen mot Waveshares C-bibliotek med rätt bytestorlek
-    fast_spi_write_nbyte(pre_flipped_glyphs[(int)c], current_font.bytes_per_char);
-
-    // Avsluta SPI-överföringen snyggt
-    DEV_Digital_Write(EPD_CS_PIN, HIGH);
-    EPD_IT8951_LoadImgEnd();
-
-    // Trigga utritning av ytan i A2-läge (Mode 6)
-    EPD_IT8951_Display_Area(x, y, current_font.width, current_font.height, IT8951_A2_MODE);
+    send_and_display_buffer(pre_flipped_glyphs[(int)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 // Funktionen bygger font-cachen i RAM.
@@ -263,40 +226,7 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
         current_x -= current_font.width;
     }
 
-    // 4. SPI-överföring av hela blocket ("Damage box")
-    IT8951_Load_Img_Info load_info;
-    IT8951_Area_Img_Info area_info;
-
-    load_info.Source_Buffer_Addr = stitch_buffer;
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-    load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_0;
-    load_info.Target_Memory_Addr = target_addr;
-
-    area_info.Area_X = physical_x;
-    area_info.Area_Y = physical_y;
-    area_info.Area_W = text_pixel_width;
-    area_info.Area_H = current_font.height;
-
-    EPD_IT8951_SetTargetMemoryAddr(target_addr);
-    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
-
-    UWORD write_preamble = 0x0000;
-    EPD_IT8951_ReadBusy();
-    DEV_Digital_Write(EPD_CS_PIN, LOW);
-
-    DEV_SPI_WriteByte(write_preamble >> 8);
-    DEV_SPI_WriteByte(write_preamble);
-    EPD_IT8951_ReadBusy();
-
-    // En enda snabb överföring via Waveshares drivrutin
-    fast_spi_write_nbyte(stitch_buffer, text_pixel_width * current_font.height);
-
-    DEV_Digital_Write(EPD_CS_PIN, HIGH);
-    EPD_IT8951_LoadImgEnd();
-
-    // 5. Trigga uppdatering för enbart denna yta i asynkront A2-läge
-    EPD_IT8951_Display_Area(physical_x, physical_y, text_pixel_width, current_font.height, IT8951_A2_MODE);
+    send_and_display_buffer(stitch_buffer, physical_x, physical_y, text_pixel_width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
@@ -348,7 +278,7 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         }
     }
 
-    // (Här infogas din standardkod för SPI-överföring av full_screen_buffer)
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
 }
 
 // Funktion för att byta font dynamiskt via F6 eller vid uppstart

@@ -17,6 +17,6 @@ typedef enum {
 extern EditorState current_state;
 
 // Huvudfunktion för att ta emot inmatning från main-loopen
-void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col);
+void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting);
 
 #endif

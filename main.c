@@ -15,9 +15,7 @@ char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 // Helper function. Clear logic buffer
 void clear_buffer() {
-    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
-        text_buffer[i] = ' ';
-    }
+    memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
 }
 
 int main() {
@@ -27,7 +25,7 @@ int main() {
     init_display(&target_addr);
 
     printf("Initierar font...\n");
-    set_active_font(1);
+    set_active_font(2);
     calculate_layout_points(current_font.width, current_font.height);
 
     printf("Kopplar upp tangentbord...\n");
@@ -46,10 +44,6 @@ int main() {
     int cursor_col = 0;
     int cursor_row = JUMP_LINES;
 
-    // Tillstånd för prompten
-    bool prompt_visible = false;
-    int prompt_timeout_ms = 800; // Tiden innan prompten ritas ut
-
     // Konfigurera poll
     struct pollfd fds[1];
     fds[0].fd = kb_fd;
@@ -59,6 +53,11 @@ int main() {
 
     struct input_event ev;
 
+    bool prompt_visible = false;
+    int prompt_px = 0;
+    int prompt_py = 0;
+    int prompt_timeout_ms = 800;
+
     // Main loop - CPU rests in read() until interrupt from keyboard
     while (1) {
         int ret = poll(fds, 1, prompt_timeout_ms);
@@ -66,11 +65,11 @@ int main() {
         if (ret == 0) {
             // TIMEOUT: inaktivitet har passerat
             if (!prompt_visible) {
-                int px = get_physical_x(cursor_col);
-                int py = get_physical_y(cursor_row);
+                prompt_px = get_physical_x(cursor_col);
+                prompt_py = get_physical_y(cursor_row);
 
                 // Rita ut understrecket i snabba A2-läget
-                render_char('_', px, py, target_addr);
+                render_char('_', prompt_px, prompt_py, target_addr);
                 prompt_visible = true;
             }
         } else if (ret > 0) {
@@ -79,17 +78,19 @@ int main() {
                 if (read(kb_fd, &ev, sizeof(ev)) > 0) {
                     if (ev.type == EV_KEY) {
 
-                        // Städa bort prompten om den är synlig innan nästa tecken hanteras
-                        if (prompt_visible) {
-                            int px = get_physical_x(cursor_col);
-                            int py = get_physical_y(cursor_row);
+                        // Städa bort prompten om den är synlig
 
-                            render_char(' ', px, py, target_addr);
+                        if (prompt_visible) {
+                            render_char(' ', prompt_px, prompt_py, target_addr);
                             prompt_visible = false;
                         }
 
+                        //Kika om det finns fler tecken i kön?
+                        int peek = poll(fds, 1, 0);
+                        bool more_keys_waiting = (peek > 0);
+
                         // Skicka tangenttryckningen och nuvarande state till editor.c
-                        handle_input(&ev, target_addr, text_buffer, &cursor_row, &cursor_col);
+                        handle_input(&ev, target_addr, text_buffer, &cursor_row, &cursor_col, more_keys_waiting);
                     }
                 }
             }
