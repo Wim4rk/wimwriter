@@ -164,163 +164,120 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Flytta upp de sista kontextraderna
-    size_t bytes_to_move = JUMP_LINES * current_max_cols * sizeof(char);
-    int source_index = (current_max_rows - JUMP_LINES) * current_max_cols;
+    int jump_offset = JUMP_LINES * current_max_cols;
+    int total_chars = current_max_rows * current_max_cols;
 
-    memmove(&buffer[0], &buffer[source_index], bytes_to_move);
+    // 1. Flytta hela textblocket uppåt i RAM i en enda operation
+    memmove(buffer, buffer + jump_offset, total_chars - jump_offset);
 
-    // 2. Rensa utrymmet under med mellanslag
-    size_t bytes_to_clear = (current_max_rows - JUMP_LINES) * current_max_cols * sizeof(char);
-    int clear_start_index = JUMP_LINES * current_max_cols;
+    // 2. Töm de nedersta raderna som nu är lediga
+    memset(buffer + (total_chars - jump_offset), ' ', jump_offset);
 
-    memset(&buffer[clear_start_index], ' ', bytes_to_clear);
+    // 3. Justera endast radpekaren (kolumnen bibehålls)
+    *cursor_row -= JUMP_LINES;
 
-    *cursor_row = JUMP_LINES;
-    *cursor_col = 0;
-
+    // 4. Överför hela den uppdaterade skärmen
     stitch_and_render_screen(buffer, target_addr);
 }
 
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    if (*cursor_col < current_max_cols) return;
+    int row_start = *cursor_row * current_max_cols;
+    int break_col = *cursor_col - 1;
 
-    if (BUF_AT(buffer, *cursor_row, current_max_cols - 1) == ' ' ||
-        BUF_AT(buffer, *cursor_row, current_max_cols - 1) == '-') {
-        *cursor_col = 0;
-        (*cursor_row)++;
-
-        if (*cursor_row >= current_max_rows) {
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-        }
-        return;
-    }
-
-    int break_col = current_max_cols - 1;
-
-    while (break_col > 0 && BUF_AT(buffer, *cursor_row, break_col) != ' ' && BUF_AT(buffer, *cursor_row, break_col) != '-') {
+    // Leta bakåt efter senaste mellanslaget
+    while (break_col > 0 && buffer[row_start + break_col] != ' ') {
         break_col--;
     }
 
-    if (break_col == 0) {
-        *cursor_col = 0;
-        (*cursor_row)++;
+    if (break_col > 0) {
+        int word_len = *cursor_col - break_col - 1;
 
-        if (*cursor_row >= current_max_rows) {
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-        }
-        return;
-    }
+        // 1. Rensa fysiskt i A2-läge för ordets gamla position
+        int clear_px = SCREEN_WIDTH - MARGIN_LEFT - (*cursor_col * current_font.width);
+        int clear_py = SCREEN_HEIGHT - MARGIN_TOP - ((*cursor_row + 1) * current_font.height);
+        clear_area(clear_px, clear_py, word_len * current_font.width, current_font.height, target_addr);
 
-    int start_move = (BUF_AT(buffer, *cursor_row, break_col) == '-') ? break_col + 1 : break_col + 1;
-    int chars_to_move = current_max_cols - start_move;
-
-    if (chars_to_move <= 0) {
-        *cursor_col = 0;
+        // 2. Stega fram en rad och trigga jump om nödvändigt
         (*cursor_row)++;
         if (*cursor_row >= current_max_rows) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
+            row_start = *cursor_row * current_max_cols;
         }
-        return;
-    }
 
-    char temp_word[chars_to_move];
+        // 3. Flytta ordet i RAM
+        memmove(&buffer[row_start], &buffer[row_start - current_max_cols + break_col + 1], word_len);
+        memset(&buffer[row_start - current_max_cols + break_col + 1], ' ', word_len);
 
-    // Läs in ordet som ska flyttas och rensa dess gamla plats logiskt
-    for (int i = 0; i < chars_to_move; i++) {
-        temp_word[i] = BUF_AT(buffer, *cursor_row, start_move + i);
-        BUF_AT(buffer, *cursor_row, start_move + i) = ' ';
-    }
+        *cursor_col = word_len;
 
-    // Visuell radering i A2-läge (snabbt och asynkront)
-    int clear_x = get_physical_x(current_max_cols - 1); // Raderar från högerkant
-    int clear_y = get_physical_y(*cursor_row);
-    int clear_width = chars_to_move * current_font.width;
+        // 4. Rita om ordet på den nya raden
+        // (Ett anrop till din funktion render_stitched_text är lämpligt här för att dumpa hela ordet direkt)
 
-    clear_area(clear_x, clear_y, clear_width, current_font.height, target_addr);
-
-    (*cursor_row)++;
-    *cursor_col = 0;
-
-    if (*cursor_row >= current_max_rows) {
-        display_jump(buffer, cursor_row, cursor_col, target_addr);
-    }
-
-    // Placera ordet på den nya raden i RAM
-    for (int i = 0; i < chars_to_move; i++) {
-        BUF_AT(buffer, *cursor_row, i) = temp_word[i];
-    }
-
-    // Ritar ut det flyttade ordet på den nya raden
-    for (int i = 0; i < chars_to_move; i++) {
-        int px = get_physical_x(i);
-        int py = get_physical_y(*cursor_row);
-        render_char(temp_word[i], px, py, target_addr);
-    }
-
-    *cursor_col = chars_to_move;
-}
-
-void render_status_bar(const char *text, UDOUBLE target_addr) {
-    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM; // 1072 - 68 = 1004
-
-    // 1. Rensa ytan i botten av skärmen (från x=0 till SCREEN_WIDTH)
-    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
-
-    // 2. Skriv ut texten, med 4 px offset nedåt för att ge plats åt skiljelinjen[cite: 2]
-    int text_y = start_y + 4;
-
-    // Börja rita från den absoluta vänsterkanten
-    int current_x = 0;
-
-    // Låt texten löpa hela vägen till SCREEN_WIDTH (1448 px)[cite: 2]
-    for (int i = 0; text[i] != '\0' && current_x < SCREEN_WIDTH; i++) {
-        render_char(text[i], current_x, text_y, target_addr);
-        current_x += current_font.width;
+    } else {
+        // Brutal radbrytning om inget mellanslag existerar
+        (*cursor_row)++;
+        *cursor_col = 0;
+        if (*cursor_row >= current_max_rows) {
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        }
     }
 }
 
-void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
-    // 1. Rensa den stora bildbufferten med vitt (0xFF för 8bpp)
-    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
-
-    // 2. Iterera över den logiska skärmbufferten och pussla in tecknen i RAM
-    for (int row = 0; row < current_max_rows; row++) {
-        for (int col = 0; col < current_max_cols; col++) {
-            char c = BUF_AT(buffer, row, col);
-            if (c == ' ' || c == '\0') continue;
-
-            // Använd dina nya funktioner för att fastställa de exakta, spegelvända koordinaterna
-            int start_x = get_physical_x(col);
-            int start_y = get_physical_y(row);
-
-            const UBYTE *glyph_bitmap = pre_flipped_glyphs[(int)c];
-
-            for (int h = 0; h < current_font.height; h++) {
-                int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
-                memcpy(&full_screen_buffer[buffer_offset],
-                        &glyph_bitmap[h * current_font.width],
-                        current_font.width);
-            }
-        }
+void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr) {
+    int len = 0;
+    while (text[len] != '\0') {
+        len++;
     }
 
-    // 3. Konfigurera bildöverföring till IT8951
+    if (len == 0) return;
+
+    int text_pixel_width = len * current_font.width;
+
+    // 1. Översätt visuella koordinater till fysiska (180 graders rotation)
+    int physical_x = SCREEN_WIDTH - visual_x - text_pixel_width;
+    int physical_y = SCREEN_HEIGHT - visual_y - current_font.height;
+
+    // 2. RAM-buffert för exakt den textsträng som ska ritas.
+    // Deklareras statiskt för att undvika minnesallokering på stacken (skonar ARMv6).
+    // Dimensionerad för en full rad (1448 px) med högst 64 px typsnittshöjd.
+    static UBYTE stitch_buffer[1448 * 64];
+
+    // Rensa endast den del av bufferten vi faktiskt kommer att använda
+    memset(stitch_buffer, 0xFF, text_pixel_width * current_font.height);
+
+    // 3. Pussla in glyferna baklänges i bufferten för att motverka rotationen
+    int current_x = text_pixel_width - current_font.width;
+
+    for (int i = 0; i < len; i++) {
+        char c = text[i];
+        if (c < 32 || c > 126) c = ' ';
+
+        const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+
+        for (int h = 0; h < current_font.height; h++) {
+            int dest_offset = (h * text_pixel_width) + current_x;
+            memcpy(&stitch_buffer[dest_offset],
+                   &glyph[h * current_font.width],
+                   current_font.width);
+        }
+        current_x -= current_font.width;
+    }
+
+    // 4. SPI-överföring av hela blocket ("Damage box")
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
 
-    load_info.Source_Buffer_Addr = full_screen_buffer;
+    load_info.Source_Buffer_Addr = stitch_buffer;
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
     load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
-    area_info.Area_X = 0;
-    area_info.Area_Y = 0;
-    area_info.Area_W = SCREEN_WIDTH;
-    area_info.Area_H = SCREEN_HEIGHT;
+    area_info.Area_X = physical_x;
+    area_info.Area_Y = physical_y;
+    area_info.Area_W = text_pixel_width;
+    area_info.Area_H = current_font.height;
 
-    // 4. Tala om för kontrollern vart datan ska och öppna kommunikationen
     EPD_IT8951_SetTargetMemoryAddr(target_addr);
     EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
 
@@ -332,14 +289,66 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     DEV_SPI_WriteByte(write_preamble);
     EPD_IT8951_ReadBusy();
 
-    // 5. Blocköverföring via fast_spi
-    fast_spi_write_nbyte(full_screen_buffer, SCREEN_WIDTH * SCREEN_HEIGHT);
+    // En enda snabb överföring via Waveshares drivrutin
+    fast_spi_write_nbyte(stitch_buffer, text_pixel_width * current_font.height);
 
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
 
-    // 6. Trigga uppdatering av hela ytan (A2 mode är 6 för denna HAT)[cite: 1]
-    EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
+    // 5. Trigga uppdatering för enbart denna yta i asynkront A2-läge
+    EPD_IT8951_Display_Area(physical_x, physical_y, text_pixel_width, current_font.height, IT8951_A2_MODE);
+}
+
+void render_status_bar(const char *text, UDOUBLE target_addr) {
+    // 1. Rensa ytan. Visuell botten är fysisk topp.
+    // Vi raderar från x=0, y=0 och fyller ut hela bredden samt höjden på 68 px[cite: 1].
+    clear_area(0, 0, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+
+    // 2. Fysisk Y-koordinat för texten.
+    // Eftersom texten är 64 px hög och ytan 68 px[cite: 1], placeras texten
+    // fysiskt kloss an mot Y = 0. De resterande 4 pixlarna bildar automatiskt
+    // en tom marginal uppåt (vilket blir din skiljelinje nedåt visuellt).
+    int physical_y = 0;
+
+    // 3. Fysisk X-koordinat börjar i högerkant (din visuella vänsterkant).
+    // Vi backar en teckenbredd för att få plats med det allra första tecknet.
+    int physical_x = SCREEN_WIDTH - current_font.width;
+
+    // Låt texten löpa hela vägen tills strängen är slut eller skärmkanten nås.
+    for (int i = 0; text[i] != '\0' && physical_x >= 0; i++) {
+        render_char(text[i], physical_x, physical_y, target_addr);
+
+        // Stega fysiskt åt vänster (vilket bygger texten visuellt åt höger)
+        physical_x -= current_font.width;
+    }
+}
+
+void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
+    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+
+    // Iterera över hela bufferten linjärt
+    for (int i = 0; i < current_max_rows * current_max_cols; i++) {
+        char c = buffer[i];
+        if (c == ' ' || c == '\0') continue;
+
+        int row = i / current_max_cols;
+        int col = i % current_max_cols;
+
+        // Beräkna inverterade koordinater för fysisk rotation direkt
+        int px = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * current_font.width);
+        int py = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * current_font.height);
+
+        const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+
+        // Blockkopiera glyphen till skärmbufferten
+        for (int h = 0; h < current_font.height; h++) {
+            memcpy(&full_screen_buffer[(py + h) * SCREEN_WIDTH + px],
+                   &glyph[h * current_font.width],
+                   current_font.width);
+        }
+    }
+
+    // (Här infogas din standardkod för SPI-överföring av full_screen_buffer)
 }
 
 // Funktion för att byta font dynamiskt via F6 eller vid uppstart
