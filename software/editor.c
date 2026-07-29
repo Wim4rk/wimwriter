@@ -245,7 +245,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 // TODO: load_file_into_buffer(...)
                 force_full_redraw();
                 current_state = STATE_EDITING;
-                process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr);
+                process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
             }
             break;
 
