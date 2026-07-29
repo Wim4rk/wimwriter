@@ -10,7 +10,7 @@
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
 
-char text_buffer[MAX_ROWS][MAX_COLS];
+char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 // Helper function. Clear logic buffer
 void clear_buffer() {
@@ -27,13 +27,19 @@ int main() {
     printf("Initierar IT8951-display via SPI...\n");
     init_display(&target_addr);
 
-    printf("Kopplar upp tangentbord\n");
+    printf("Initierar font...\n");
+    set_active_font(1);
+    calculate_layout_points(current_font.width, current_font.height);
+
+    printf("Kopplar upp tangentbord...\n");
     int kb_fd = keyboard_init(KEYBOARD_DEVICE);
     if (kb_fd < 0) {
         printf("Kunde inte öppna tangentbordet (sudo?).\n");
         cleanup_display();
         return 1;
     }
+
+    printf("Rensar buffer...\n");
 
     clear_buffer();
 
@@ -50,7 +56,7 @@ int main() {
     fds[0].fd = kb_fd;
     fds[0].events = POLLIN;
 
-    printf("WimWriter redo.\n");
+    printf("WimWriter redo!\n");
 
     struct input_event ev;
 

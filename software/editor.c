@@ -63,7 +63,7 @@ static void generate_default_filename(void){
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
 }
 
-static void process_text_input(char c, char text_buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_cols], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     switch (c) {
         case '\n': // Enter
             *cursor_col = 0;
@@ -77,7 +77,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][MAX_COLS], int
             } else if (*cursor_row > 0) {
                 // Vi är på kolumn 0, hoppa upp en rad
                 (*cursor_row)--;
-                *cursor_col = MAX_COLS - 1;
+                *cursor_col = current_max_cols - 1;
 
                 // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
                 while (*cursor_col > 0 && text_buffer[*cursor_row][*cursor_col] == '\0') {
@@ -89,7 +89,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][MAX_COLS], int
             }
 
             // 1. Logisk radering i RAM-minnet
-            text_buffer[*cursor_row][*cursor_col] = '\0';
+            BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
 
             // 2. Visuell radering på e-bläckskärmen i A2-läge[cite: 1]
             int px_back = get_physical_x(*cursor_col);
@@ -110,7 +110,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][MAX_COLS], int
                 (*cursor_col)++;
 
                 // Hantera automatisk radbrytning
-                if (*cursor_col >= MAX_COLS) {
+                if (*cursor_col >= current_max_cols) {
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
                 }
             }
@@ -126,7 +126,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][MAX_COLS], int
 // ==========================================
 // HUVUDLOGIK
 // ==========================================
-void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col) {
+void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[MAX_ROWS][current_max_cols], int *cursor_row, int *cursor_col) {
 
     // Vi är bara intresserade av tangenttryckningar
     if (ev->type != EV_KEY) return;

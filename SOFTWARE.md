@@ -85,6 +85,11 @@ Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess inn
 
 En *manual override* som låter dig slå på/av WiFi, till exempel för administration över SSH. När WiFi är på skall statusraden vara igång hela tiden och visa "WiFi".
 
+## Spara state
+
+* Spara vid ändring (F3, F6): Variabler som sällan ändras, såsom aktiv font och filhistorik, sparas direkt när växlingen sker. Eftersom dessa händelser ändå kräver en uppdatering av skärmen och en naturlig paus i skrivandet, kommer systemet inte att blockeras under aktiv inmatning. 
+* Spara via GPIO (Avstängning): Dynamiska data som skrivpromptens exakta position, inaktivitetstimer, när senaste backup gjordes, samt exakt vad som finns i skärmbufferten sparas undan när maskinen stängs av. Eftersom GPIO-knappen redan är avsedd att trigga ditt "Safe Shutdown"-skript och en asynkron synkronisering, är detta det logiska tillfället att säkra arbetsmiljöns sista status innan EN-stiftet bryter strömmen.  
+
 ## Navigera
 
 Vi behöver se till att pilarna, page up/down, home och end fungerar som förväntat. Även med mod-tangenter (Ctrl + Home/End, Ctrl + Pil H/V). 

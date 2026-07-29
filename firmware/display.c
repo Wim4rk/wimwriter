@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "display.h"
-// #include "wim_font_courier.h"
-#include "wim_font_prestige_32x64.h"
+#include "wim_fonts.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
@@ -10,11 +9,17 @@
 extern void EPD_IT8951_ReadBusy(void);
 
 // Allokera minnet för de globala variablerna här
-char view_buffer[MAX_ROWS][MAX_COLS];
+char view_buffer[current_max_rows][MAX_COLS];
 uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
+// I display.c
+int current_max_cols = 0;
+int current_current_max_rows = 0;
+int point_x[ABSOLUTE_MAX_COLS];
+int point_y[ABSOLUTE_MAX_ROWS];
+
 // Cache för färdigvända tecken - spara beräkning under skrivning
-static UBYTE pre_flipped_glyphs[128][GLYPH_SIZE_BYTES];
+static UBYTE pre_flipped_glyphs[128][2048];
 
 void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     if (width <= 0 || height <= 0) return;
@@ -67,7 +72,13 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
 }
 
-void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+void clear_buffer() {
+    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
+        text_buffer[i] = ' ';
+    }
+}
+
+void redraw_buffer(char buffer[current_max_rows][MAX_COLS], UDOUBLE target_addr) {
     // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
     // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
     static UBYTE screen_frame_buffer[SCREEN_WIDTH * SCREEN_HEIGHT]; // Anpassa storlek efter pixelformat (t.ex. 8bpp)
@@ -77,9 +88,9 @@ void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
     memset(screen_frame_buffer, 0xFF, sizeof(screen_frame_buffer));
 
     // 2. Bygg ihop skärmbilden lokalt i RAM via snabba memcpy
-    for (int row = 0; row < MAX_ROWS; row++) {
+    for (int row = 0; row < current_max_rows; row++) {
         for (int col = 0; col < MAX_COLS; col++) {
-            char c = buffer[row][col];
+            char c = BUF_AT(buffer, row, col);
             if (c < 0 || c > 127) c = ' ';
 
             const UBYTE *glyph = pre_flipped_glyphs[(int)c];
@@ -134,26 +145,30 @@ void redraw_buffer(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
 }
 
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
-    if (c < 0 || c > 127) return;
+    // Filtrera bort icke-utskrivbara tecken för att spara cykler
+    if (c < 32 || c > 126) return;
 
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
 
+    // Peka på det förberedda tecknet i den roterade RAM-cachen
     load_info.Source_Buffer_Addr = (UBYTE*)pre_flipped_glyphs[(int)c];
     load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
     load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
 
+    // Hämta dynamiska dimensioner från den aktiva fontstrukturen
     area_info.Area_X = x;
     area_info.Area_Y = y;
-    area_info.Area_W = GLYPH_W;
-    area_info.Area_H = GLYPH_H;
+    area_info.Area_W = current_font.width;
+    area_info.Area_H = current_font.height;
 
-    // EPD_IT8951_WaitForDisplayReady(); // Blockerar inputtråden
+    // Konfigurera kontrollern för den specifika minnesytan
     EPD_IT8951_SetTargetMemoryAddr(target_addr);
     EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
 
+    // Förbered SPI-överföring (preamble)
     UWORD write_preamble = 0x0000;
     EPD_IT8951_ReadBusy();
     DEV_Digital_Write(EPD_CS_PIN, LOW);
@@ -162,12 +177,15 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     DEV_SPI_WriteByte(write_preamble);
     EPD_IT8951_ReadBusy();
 
-    fast_spi_write_nbyte(pre_flipped_glyphs[(int)c], GLYPH_SIZE_BYTES);
+    // Gör blocköverföringen mot Waveshares C-bibliotek med rätt bytestorlek
+    fast_spi_write_nbyte(pre_flipped_glyphs[(int)c], current_font.bytes_per_char);
 
+    // Avsluta SPI-överföringen snyggt
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
 
-    EPD_IT8951_Display_Area(x, y, GLYPH_W, GLYPH_H, IT8951_A2_MODE);
+    // Trigga utritning av ytan i A2-läge (Mode 6)
+    EPD_IT8951_Display_Area(x, y, current_font.width, current_font.height, IT8951_A2_MODE);
 }
 
 void init_display(UDOUBLE *target_addr) {
@@ -187,34 +205,35 @@ void cleanup_display(void) {
      DEV_Module_Exit();
 }
 
+// Enkel uppslagning
 int get_physical_x(int col) {
-    // Börja vid den fysiska vänsterkanten (högt X-värde) och minska X för varje ny kolumn
-    return SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * GLYPH_W);
+    return point_x[col];
 }
 
 int get_physical_y(int row) {
-    // Börja vid den fysiska toppen (högt Y-värde) och minska Y för varje ny rad
-    return SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * GLYPH_H);
+    return point_y[row];
 }
 
-void display_jump(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Flytta upp de sista kontextraderna till toppen av bufferten
-    size_t bytes_to_move = JUMP_LINES * MAX_COLS * sizeof(char);
-    memmove(&buffer[0][0], &buffer[MAX_ROWS - JUMP_LINES][0], bytes_to_move);
+void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // 1. Flytta upp de sista kontextraderna
+    size_t bytes_to_move = JUMP_LINES * current_max_cols * sizeof(char);
+    int source_index = (current_max_rows - JUMP_LINES) * current_max_cols;
 
-    // 2. Rensa hela utrymmet under kontextraderna med mellanslag
-    size_t bytes_to_clear = (MAX_ROWS - JUMP_LINES) * MAX_COLS * sizeof(char);
-    memset(&buffer[JUMP_LINES][0], ' ', bytes_to_clear);
+    memmove(&buffer[0], &buffer[source_index], bytes_to_move);
 
-    // 3. Sätt markören på första lediga rad efter kontexten
+    // 2. Rensa utrymmet under med mellanslag
+    size_t bytes_to_clear = (current_max_rows - JUMP_LINES) * current_max_cols * sizeof(char);
+    int clear_start_index = JUMP_LINES * current_max_cols;
+
+    memset(&buffer[clear_start_index], ' ', bytes_to_clear);
+
     *cursor_row = JUMP_LINES;
     *cursor_col = 0;
 
-    // Skicka med target_addr i anropet
-        stitch_and_render_screen(buffer, target_addr);
+    stitch_and_render_screen(buffer, target_addr);
 }
 
-void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     if (*cursor_col < MAX_COLS) return;
 
     // Om raden slutar på ett mellanslag struntar vi i att rendera det på ny rad.
@@ -223,7 +242,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
         *cursor_col = 0;
         (*cursor_row)++;
 
-        if (*cursor_row >= MAX_ROWS) {
+        if (*cursor_row >= current_max_rows) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         }
         return;
@@ -235,7 +254,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
         *cursor_col = 0;
         (*cursor_row)++;
 
-        if (*cursor_row >= MAX_ROWS) {
+        if (*cursor_row >= current_max_rows) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         }
         return;
@@ -253,7 +272,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
         *cursor_col = 0;
         (*cursor_row)++;
 
-        if (*cursor_row >= MAX_ROWS) {
+        if (*cursor_row >= current_max_rows) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         }
         return;
@@ -268,7 +287,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     if (chars_to_move <= 0) {
         *cursor_col = 0;
         (*cursor_row)++;
-        if (*cursor_row >= MAX_ROWS) {
+        if (*cursor_row >= current_max_rows) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         }
         return;
@@ -291,7 +310,7 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     (*cursor_row)++;
     *cursor_col = 0;
 
-    if (*cursor_row >= MAX_ROWS) {
+    if (*cursor_row >= current_max_rows) {
         display_jump(buffer, cursor_row, cursor_col, target_addr);
     }
 
@@ -307,12 +326,20 @@ void word_wrap(char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col
     *cursor_col = chars_to_move;
 }
 
-// Förbereder font-cachen i RAM. Anropas en gång vid uppstart.
+// Funktionen bygger font-cachen i RAM.
+// Anropas inifrån set_active_font() (och indirekt vid uppstart).
 void init_glyph_cache(void) {
+    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
+    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
+
+    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
     for (int c = 32; c < 127; c++) {
-        for (int i = 0; i < GLYPH_SIZE_BYTES; i++) {
-            // Vänder arrayen baklänges för att rotera tecknet 180 grader
-            pre_flipped_glyphs[c][i] = wim_font_32x64[c][GLYPH_SIZE_BYTES - 1 - i];
+        // Hämta startadressen för det enskilda tecknet i fontens rådata
+        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
+
+        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
+        for (int i = 0; i < current_font.bytes_per_char; i++) {
+            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
         }
     }
 }
@@ -336,14 +363,14 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     }
 }
 
-void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_addr) {
+void stitch_and_render_screen(char buffer[current_max_rows][MAX_COLS], UDOUBLE target_addr) {
     // 1. Rensa den stora bildbufferten med vitt (0xFF för 8bpp)
     memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
 
     // 2. Iterera över den logiska skärmbufferten och pussla in tecknen i RAM
-    for (int row = 0; row < MAX_ROWS; row++) {
+    for (int row = 0; row < current_max_rows; row++) {
         for (int col = 0; col < MAX_COLS; col++) {
-            char c = buffer[row][col];
+            char c = BUF_AT(buffer, row, col);
             if (c == ' ' || c == '\0') continue;
 
             // Använd dina nya funktioner för att fastställa de exakta, spegelvända koordinaterna
@@ -396,4 +423,35 @@ void stitch_and_render_screen(char buffer[MAX_ROWS][MAX_COLS], UDOUBLE target_ad
 
     // 6. Trigga uppdatering av hela ytan (A2 mode är 6 för denna HAT)[cite: 1]
     EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
+}
+
+// Funktion för att byta font dynamiskt via F6 eller vid uppstart
+void set_active_font(int font_choice) {
+    if (font_choice == 1) {
+        current_font.data = (const uint8_t*)font_16x28;
+        current_font.width = FONT_16X28_W;
+        current_font.height = FONT_16X28_H;
+        current_font.bytes_per_char = FONT_16X28_BYTES;
+    } else {
+        current_font.data = (const uint8_t*)font_24x41;
+        current_font.width = FONT_24X41_W;
+        current_font.height = FONT_24X41_H;
+        current_font.bytes_per_char = FONT_24X41_BYTES;
+    }
+
+    // Så fort fonten ändras, måste vi ladda om den spegelvända cachen
+    init_glyph_cache();
+}
+
+// Körs en gång när en font laddas in via F6 eller uppstart
+void calculate_layout_points(int font_w, int font_h) {
+    current_max_cols = (SCREEN_WIDTH - MARGIN_LEFT - MARGIN_RIGHT) / font_w;
+    current_max_rows = (SCREEN_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM) / font_h;
+
+    for (int col = 0; col < current_max_cols; col++) {
+        point_x[col] = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * font_w);
+    }
+    for (int row = 0; row < current_max_rows; row++) {
+        point_y[row] = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * font_h);
+    }
 }
