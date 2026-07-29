@@ -25,7 +25,7 @@ int main() {
     init_display(&target_addr);
 
     printf("Initierar font...\n");
-    set_active_font(2);
+    set_active_font(1);
     calculate_layout_points(current_font.width, current_font.height);
 
     printf("Kopplar upp tangentbord...\n");
