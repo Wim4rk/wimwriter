@@ -48,8 +48,6 @@ extern int point_y[ABSOLUTE_MAX_ROWS];
 extern int current_max_cols;
 extern int current_max_rows;
 
-// Skärmbufferten som speglar dokumentet (Vyn) - Allokeras dynamiskt i display.c
-extern char *view_buffer;
 
 // Den statiska bildbufferten i RAM för helskärmsuppdateringar
 extern uint8_t full_screen_buffer[FULL_SCREEN_BUFFER_SIZE];

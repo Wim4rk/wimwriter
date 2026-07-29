@@ -127,7 +127,7 @@ static void generate_default_filename(void){
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
 }
 
-static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_cols], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     switch (c) {
         case '\n': // Enter
             *cursor_col = 0;
@@ -181,7 +181,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_co
             break;
     }
 
-    // Hoppa upp (Jump) om vi når botten av den definierade skrivytan[cite: 2]
+    // Hoppa upp (Jump) om vi når botten av den definierade skrivytan
     if (*cursor_row >= current_max_rows) {
         display_jump(text_buffer, cursor_row, cursor_col, target_addr);
     }
@@ -397,7 +397,7 @@ extern int current_max_cols;
 extern int current_max_rows;
 
 // Skärmbufferten som speglar dokumentet (Vyn) - Allokeras dynamiskt i display.c
-extern char *view_buffer;
+extern char view_buffer;
 
 // Den statiska bildbufferten i RAM för helskärmsuppdateringar
 extern uint8_t full_screen_buffer[FULL_SCREEN_BUFFER_SIZE];
@@ -452,13 +452,13 @@ void calculate_layout_points(int font_w, int font_h);
 extern void EPD_IT8951_ReadBusy(void);
 
 char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
-int current_max_rows = 0;
 
 // I display.c
 int current_max_cols = 0;
-int current_current_max_rows = 0;
+int current_max_rows = 0;
 int point_x[ABSOLUTE_MAX_COLS];
 int point_y[ABSOLUTE_MAX_ROWS];
+void init_glyph_cache(void);
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
@@ -514,12 +514,6 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
 }
 
-void clear_buffer() {
-    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
-        text_buffer[i] = ' ';
-    }
-}
-
 void redraw_buffer(char *buffer, UDOUBLE target_addr) {
     // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
     // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
@@ -531,7 +525,7 @@ void redraw_buffer(char *buffer, UDOUBLE target_addr) {
 
     // 2. Bygg ihop skärmbilden lokalt i RAM via snabba memcpy
     for (int row = 0; row < current_max_rows; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
+        for (int col = 0; col < current_max_cols; col++) {
             char c = BUF_AT(buffer, row, col);
             if (c < 0 || c > 127) c = ' ';
 
@@ -628,6 +622,24 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 
     // Trigga utritning av ytan i A2-läge (Mode 6)
     EPD_IT8951_Display_Area(x, y, current_font.width, current_font.height, IT8951_A2_MODE);
+}
+
+// Funktionen bygger font-cachen i RAM.
+// Anropas inifrån set_active_font() (och indirekt vid uppstart).
+void init_glyph_cache(void) {
+    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
+    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
+
+    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
+    for (int c = 32; c < 127; c++) {
+        // Hämta startadressen för det enskilda tecknet i fontens rådata
+        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
+
+        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
+        for (int i = 0; i < current_font.bytes_per_char; i++) {
+            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
+        }
+    }
 }
 
 void init_display(UDOUBLE *target_addr) {
@@ -754,24 +766,6 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     *cursor_col = chars_to_move;
 }
 
-// Funktionen bygger font-cachen i RAM.
-// Anropas inifrån set_active_font() (och indirekt vid uppstart).
-void init_glyph_cache(void) {
-    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
-    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
-
-    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
-    for (int c = 32; c < 127; c++) {
-        // Hämta startadressen för det enskilda tecknet i fontens rådata
-        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
-
-        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
-        for (int i = 0; i < current_font.bytes_per_char; i++) {
-            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
-        }
-    }
-}
-
 void render_status_bar(const char *text, UDOUBLE target_addr) {
     int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM; // 1072 - 68 = 1004
 
@@ -797,7 +791,7 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
 
     // 2. Iterera över den logiska skärmbufferten och pussla in tecknen i RAM
     for (int row = 0; row < current_max_rows; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
+        for (int col = 0; col < current_max_cols; col++) {
             char c = BUF_AT(buffer, row, col);
             if (c == ' ' || c == '\0') continue;
 
@@ -1040,14 +1034,13 @@ char keyboard_get_char(struct input_event *ev) {
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
 
-char *text_buffer;
+// Allokera en fast minnesyta som rymmer den minsta tänkbara fonten
+char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 // Helper function. Clear logic buffer
 void clear_buffer() {
-    for (int r = 0; r < MAX_ROWS; r++) {
-        for (int c = 0; c < MAX_COLS; c++) {
-            text_buffer[r][c] = ' ';
-        }
+    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
+        text_buffer[i] = ' ';
     }
 }
 

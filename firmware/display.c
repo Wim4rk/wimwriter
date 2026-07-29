@@ -8,13 +8,12 @@
 
 extern void EPD_IT8951_ReadBusy(void);
 
-char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
-
 // I display.c
 int current_max_cols = 0;
 int current_max_rows = 0;
 int point_x[ABSOLUTE_MAX_COLS];
 int point_y[ABSOLUTE_MAX_ROWS];
+void init_glyph_cache(void);
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
@@ -26,7 +25,7 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
 
     // Statisk buffert för att undvika malloc i skrivloopen.
     // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
-    static UBYTE white_buffer[92672];
+    static UBYTE white_buffer[98500];
     static bool buffer_initialized = false;
 
     if (!buffer_initialized) {
@@ -68,78 +67,6 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
 
     // Tvinga uppdatering i A2-läge för att rensa ytan direkt
     EPD_IT8951_Display_Area(x, y, width, height, IT8951_A2_MODE);
-}
-
-void clear_buffer() {
-    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
-        text_buffer[i] = ' ';
-    }
-}
-
-void redraw_buffer(char *buffer, UDOUBLE target_addr) {
-    // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
-    // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
-    static UBYTE screen_frame_buffer[SCREEN_WIDTH * SCREEN_HEIGHT]; // Anpassa storlek efter pixelformat (t.ex. 8bpp)
-
-    // Fyll bufferten med vit bakgrund (eller nollor beroende på initiering)
-    // Här utgår vi från att 0xFF är vit/bakgrund
-    memset(screen_frame_buffer, 0xFF, sizeof(screen_frame_buffer));
-
-    // 2. Bygg ihop skärmbilden lokalt i RAM via snabba memcpy
-    for (int row = 0; row < current_max_rows; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
-            char c = BUF_AT(buffer, row, col);
-            if (c < 0 || c > 127) c = ' ';
-
-            const UBYTE *glyph = pre_flipped_glyphs[(int)c];
-
-            int px = get_physical_x(col);
-            int py = get_physical_y(row);
-
-            // Kopiera rad för rad av glyphen till rätt position i den stora ram-bufferten
-            for (int h = 0; h < current_font.height; h++) {
-                // Beräkna destination i den stora skärmbufferten
-                int dest_offset = (py + h) * SCREEN_WIDTH + px;
-                // Kopiera 32 pixlar (bytes) för denna rad av tecknet
-                memcpy(&screen_frame_buffer[dest_offset], &glyph[h * current_font.width], current_font.width);
-            }
-        }
-    }
-
-    // 3. Skicka hela den sammansatta bilden till IT8951 i ett enda block
-    IT8951_Load_Img_Info load_info;
-    IT8951_Area_Img_Info area_info;
-
-    load_info.Source_Buffer_Addr = screen_frame_buffer;
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
-    load_info.Pixel_Format = IT8951_8BPP;
-    load_info.Rotate = IT8951_ROTATE_0;
-    load_info.Target_Memory_Addr = target_addr;
-
-    area_info.Area_X = 0;
-    area_info.Area_Y = 0;
-    area_info.Area_W = SCREEN_WIDTH;
-    area_info.Area_H = SCREEN_HEIGHT;
-
-    EPD_IT8951_SetTargetMemoryAddr(target_addr);
-    EPD_IT8951_LoadImgAreaStart(&load_info, &area_info);
-
-    UWORD write_preamble = 0x0000;
-    EPD_IT8951_ReadBusy();
-    DEV_Digital_Write(EPD_CS_PIN, LOW);
-
-    DEV_SPI_WriteByte(write_preamble >> 8);
-    DEV_SPI_WriteByte(write_preamble);
-    EPD_IT8951_ReadBusy();
-
-    // Skicka hela skärmblocket på en gång
-    fast_spi_write_nbyte(screen_frame_buffer, SCREEN_WIDTH * SCREEN_HEIGHT);
-
-    DEV_Digital_Write(EPD_CS_PIN, HIGH);
-    EPD_IT8951_LoadImgEnd();
-
-    // 4. Trigga uppdatering av hela skärmen i A2-läge
-    EPD_IT8951_Display_Area(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, IT8951_A2_MODE);
 }
 
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
@@ -184,6 +111,24 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 
     // Trigga utritning av ytan i A2-läge (Mode 6)
     EPD_IT8951_Display_Area(x, y, current_font.width, current_font.height, IT8951_A2_MODE);
+}
+
+// Funktionen bygger font-cachen i RAM.
+// Anropas inifrån set_active_font() (och indirekt vid uppstart).
+void init_glyph_cache(void) {
+    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
+    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
+
+    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
+    for (int c = 32; c < 127; c++) {
+        // Hämta startadressen för det enskilda tecknet i fontens rådata
+        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
+
+        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
+        for (int i = 0; i < current_font.bytes_per_char; i++) {
+            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
+        }
+    }
 }
 
 void init_display(UDOUBLE *target_addr) {
@@ -308,24 +253,6 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     }
 
     *cursor_col = chars_to_move;
-}
-
-// Funktionen bygger font-cachen i RAM.
-// Anropas inifrån set_active_font() (och indirekt vid uppstart).
-void init_glyph_cache(void) {
-    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
-    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
-
-    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
-    for (int c = 32; c < 127; c++) {
-        // Hämta startadressen för det enskilda tecknet i fontens rådata
-        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
-
-        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
-        for (int i = 0; i < current_font.bytes_per_char; i++) {
-            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
-        }
-    }
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
