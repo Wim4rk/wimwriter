@@ -14,15 +14,6 @@ CFLAGS = -Wall -O3 -D BCM -DUSE_BCM2835_LIB
 
 LDFLAGS = -lbcm2835 -lm -lrt -lpthread
 
-# Flaggor: BCM-stöd och exakta sökvägar till alla mappar med header-filer
-SRC_C = main.c \
-        $(DIR_CONFIG)/DEV_Config.c \
-        $(DIR_EPD)/EPD_IT8951.c
-
-# Byt ut .c mot .o för objektfilerna
-OBJ_O = $(SRC_C:.c=.o)
-
-
 # Nödvändiga bibliotek (bcm2835 för hårdvara, math, realtid, pthreads)
 LIB = -lbcm2835 -lm -lrt -lpthread
 
@@ -35,6 +26,8 @@ INCLUDES = -I./firmware \
 
 # Alla C-källkodsfiler
 SRCS = main.c \
+       fonts/wim_font_16x28.c \
+       fonts/wim_font_24x41.c \
        firmware/display.c \
        firmware/fast_spi.c \
        firmware/keyboard.c \
