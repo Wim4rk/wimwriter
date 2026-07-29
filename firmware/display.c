@@ -8,13 +8,11 @@
 
 extern void EPD_IT8951_ReadBusy(void);
 
-// Allokera minnet för de globala variablerna här
-char view_buffer[current_max_rows][MAX_COLS];
-uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 // I display.c
 int current_max_cols = 0;
-int current_current_max_rows = 0;
+int current_max_rows = 0;
 int point_x[ABSOLUTE_MAX_COLS];
 int point_y[ABSOLUTE_MAX_ROWS];
 
@@ -78,7 +76,7 @@ void clear_buffer() {
     }
 }
 
-void redraw_buffer(char buffer[current_max_rows][MAX_COLS], UDOUBLE target_addr) {
+void redraw_buffer(char *buffer, UDOUBLE target_addr) {
     // 1. Allokera en lokal bildbuffert för hela skärmytan i RAM
     // (Alternativt kan en statisk buffer deklareras för att slippa malloc på stacken)
     static UBYTE screen_frame_buffer[SCREEN_WIDTH * SCREEN_HEIGHT]; // Anpassa storlek efter pixelformat (t.ex. 8bpp)
@@ -99,11 +97,11 @@ void redraw_buffer(char buffer[current_max_rows][MAX_COLS], UDOUBLE target_addr)
             int py = get_physical_y(row);
 
             // Kopiera rad för rad av glyphen till rätt position i den stora ram-bufferten
-            for (int h = 0; h < GLYPH_H; h++) {
+            for (int h = 0; h < current_font.height; h++) {
                 // Beräkna destination i den stora skärmbufferten
                 int dest_offset = (py + h) * SCREEN_WIDTH + px;
                 // Kopiera 32 pixlar (bytes) för denna rad av tecknet
-                memcpy(&screen_frame_buffer[dest_offset], &glyph[h * GLYPH_W], GLYPH_W);
+                memcpy(&screen_frame_buffer[dest_offset], &glyph[h * current_font.width], current_font.width);
             }
         }
     }
@@ -233,12 +231,11 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
     stitch_and_render_screen(buffer, target_addr);
 }
 
-void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    if (*cursor_col < MAX_COLS) return;
+void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    if (*cursor_col < current_max_cols) return;
 
-    // Om raden slutar på ett mellanslag struntar vi i att rendera det på ny rad.
-    // Vi bara flyttar ner markören och nollställer kolumnen.
-    if (buffer[*cursor_row][MAX_COLS - 1] == ' ') {
+    if (BUF_AT(buffer, *cursor_row, current_max_cols - 1) == ' ' ||
+        BUF_AT(buffer, *cursor_row, current_max_cols - 1) == '-') {
         *cursor_col = 0;
         (*cursor_row)++;
 
@@ -248,27 +245,13 @@ void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cu
         return;
     }
 
-    // Om raden slutar på ett bindestreck stannar det på den övre raden.
-    // Vi flyttar bara ner markören utan att flytta några tecken.
-    if (buffer[*cursor_row][MAX_COLS - 1] == '-') {
-        *cursor_col = 0;
-        (*cursor_row)++;
+    int break_col = current_max_cols - 1;
 
-        if (*cursor_row >= current_max_rows) {
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-        }
-        return;
-    }
-
-    int break_col = MAX_COLS - 1;
-
-    // Leta bakåt efter ett naturligt brytmönster (mellanslag eller bindestreck)
-    while (break_col > 0 && buffer[*cursor_row][break_col] != ' ' && buffer[*cursor_row][break_col] != '-') {
+    while (break_col > 0 && BUF_AT(buffer, *cursor_row, break_col) != ' ' && BUF_AT(buffer, *cursor_row, break_col) != '-') {
         break_col--;
     }
 
     if (break_col == 0) {
-        // Om inget brytmärkes hittas tvingas radbrytning på sista kolumnen
         *cursor_col = 0;
         (*cursor_row)++;
 
@@ -278,11 +261,8 @@ void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cu
         return;
     }
 
-    // Om vi bröt vid ett bindestreck ska bindestrecket stanna kvar (index break_col),
-    // och vi flyttar endast det som kommer efter. Om vi bröt vid ett mellanslag
-    // hoppar vi över själva mellanslagsindexet.
-    int start_move = (buffer[*cursor_row][break_col] == '-') ? break_col + 1 : break_col + 1;
-    int chars_to_move = MAX_COLS - start_move;
+    int start_move = (BUF_AT(buffer, *cursor_row, break_col) == '-') ? break_col + 1 : break_col + 1;
+    int chars_to_move = current_max_cols - start_move;
 
     if (chars_to_move <= 0) {
         *cursor_col = 0;
@@ -295,18 +275,19 @@ void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cu
 
     char temp_word[chars_to_move];
 
-    // 1. Minneshantering i RAM
-    memcpy(temp_word, &buffer[*cursor_row][start_move], chars_to_move);
-    memset(&buffer[*cursor_row][start_move], ' ', MAX_COLS - start_move);
+    // Läs in ordet som ska flyttas och rensa dess gamla plats logiskt
+    for (int i = 0; i < chars_to_move; i++) {
+        temp_word[i] = BUF_AT(buffer, *cursor_row, start_move + i);
+        BUF_AT(buffer, *cursor_row, start_move + i) = ' ';
+    }
 
-    // 2. Skärmoperation: Radera ordets tidigare placering i ett svep i A2-läge
-    int clear_x = get_physical_x(MAX_COLS - 1);
+    // Visuell radering i A2-läge (snabbt och asynkront)
+    int clear_x = get_physical_x(current_max_cols - 1); // Raderar från högerkant
     int clear_y = get_physical_y(*cursor_row);
-    int clear_width = chars_to_move * GLYPH_W;
+    int clear_width = chars_to_move * current_font.width;
 
-    clear_area(clear_x, clear_y, clear_width, GLYPH_H, target_addr);
+    clear_area(clear_x, clear_y, clear_width, current_font.height, target_addr);
 
-    // 3. Förbered ny rad
     (*cursor_row)++;
     *cursor_col = 0;
 
@@ -314,9 +295,12 @@ void word_wrap(char buffer[current_max_rows][MAX_COLS], int *cursor_row, int *cu
         display_jump(buffer, cursor_row, cursor_col, target_addr);
     }
 
-    memcpy(&buffer[*cursor_row][0], temp_word, chars_to_move);
+    // Placera ordet på den nya raden i RAM
+    for (int i = 0; i < chars_to_move; i++) {
+        BUF_AT(buffer, *cursor_row, i) = temp_word[i];
+    }
 
-    // 4. Skärmoperation: Rita ut det flyttade ordet på den nya raden
+    // Ritar ut det flyttade ordet på den nya raden
     for (int i = 0; i < chars_to_move; i++) {
         int px = get_physical_x(i);
         int py = get_physical_y(*cursor_row);
@@ -359,17 +343,17 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     // Låt texten löpa hela vägen till SCREEN_WIDTH (1448 px)[cite: 2]
     for (int i = 0; text[i] != '\0' && current_x < SCREEN_WIDTH; i++) {
         render_char(text[i], current_x, text_y, target_addr);
-        current_x += GLYPH_W;
+        current_x += current_font.width;
     }
 }
 
-void stitch_and_render_screen(char buffer[current_max_rows][MAX_COLS], UDOUBLE target_addr) {
+void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     // 1. Rensa den stora bildbufferten med vitt (0xFF för 8bpp)
     memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
 
     // 2. Iterera över den logiska skärmbufferten och pussla in tecknen i RAM
     for (int row = 0; row < current_max_rows; row++) {
-        for (int col = 0; col < MAX_COLS; col++) {
+        for (int col = 0; col < current_max_cols; col++) {
             char c = BUF_AT(buffer, row, col);
             if (c == ' ' || c == '\0') continue;
 
@@ -379,11 +363,11 @@ void stitch_and_render_screen(char buffer[current_max_rows][MAX_COLS], UDOUBLE t
 
             const UBYTE *glyph_bitmap = pre_flipped_glyphs[(int)c];
 
-            for (int h = 0; h < GLYPH_H; h++) {
+            for (int h = 0; h < current_font.height; h++) {
                 int buffer_offset = ((start_y + h) * SCREEN_WIDTH) + start_x;
                 memcpy(&full_screen_buffer[buffer_offset],
-                        &glyph_bitmap[h * GLYPH_W],
-                        GLYPH_W);
+                        &glyph_bitmap[h * current_font.width],
+                        current_font.width);
             }
         }
     }

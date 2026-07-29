@@ -10,14 +10,13 @@
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
 
+// Allokera en fast minnesyta som rymmer den minsta tänkbara fonten
 char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 // Helper function. Clear logic buffer
 void clear_buffer() {
-    for (int r = 0; r < MAX_ROWS; r++) {
-        for (int c = 0; c < MAX_COLS; c++) {
-            text_buffer[r][c] = ' ';
-        }
+    for (int i = 0; i < (ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); i++) {
+        text_buffer[i] = ' ';
     }
 }
 

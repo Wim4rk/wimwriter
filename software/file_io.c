@@ -3,12 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 
-void load_file_into_buffer(const char *filename, char buffer[MAX_ROWS][MAX_COLS], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    memset(buffer, ' ', MAX_ROWS * MAX_COLS * sizeof(char));
+void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    memset(buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); // Rensar hela den allokerade ytan
 
     // TODO: Din logik för att läsa från SD-kortet
 
-    *cursor_row = MAX_ROWS - JUMP_LINES;
+    *cursor_row = current_max_rows - JUMP_LINES;
     *cursor_col = 0;
 
     // Skicka med target_addr här

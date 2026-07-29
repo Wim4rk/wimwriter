@@ -63,7 +63,7 @@ static void generate_default_filename(void){
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
 }
 
-static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_cols], int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     switch (c) {
         case '\n': // Enter
             *cursor_col = 0;
@@ -95,7 +95,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_co
             int px_back = get_physical_x(*cursor_col);
             int py_back = get_physical_y(*cursor_row);
 
-            clear_area(px_back, py_back, GLYPH_W, GLYPH_H, target_addr);
+            clear_area(px_back, py_back, current_font.width, current_font.height, target_addr);
             break;
 
         default: // Vanliga tecken
@@ -117,8 +117,8 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_co
             break;
     }
 
-    // Hoppa upp (Jump) om vi når botten av den definierade skrivytan[cite: 2]
-    if (*cursor_row >= MAX_ROWS) {
+    // Hoppa upp (Jump) om vi når botten av den definierade skrivytan
+    if (*cursor_row >= current_max_rows) {
         display_jump(text_buffer, cursor_row, cursor_col, target_addr);
     }
 }
@@ -126,7 +126,7 @@ static void process_text_input(char c, char text_buffer[MAX_ROWS][current_max_co
 // ==========================================
 // HUVUDLOGIK
 // ==========================================
-void handle_input(struct input_event *ev, UDOUBLE target_addr, char text_buffer[MAX_ROWS][current_max_cols], int *cursor_row, int *cursor_col) {
+void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col) {
 
     // Vi är bara intresserade av tangenttryckningar
     if (ev->type != EV_KEY) return;
