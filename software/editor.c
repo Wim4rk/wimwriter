@@ -27,7 +27,7 @@ static void show_file_in_status_bar(void) {}
 static void show_next_file(void) {}
 static void force_full_redraw(void) {}
 
-static void save_to_sd(const char *filename) {
+static void save_to_sd(const char *filename, char *text_buffer, UDOUBLE target_addr) {
     // Anropar funktionen i file_io.c
     save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
 
@@ -229,7 +229,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     update_status_bar_visuals(target_addr);
                     current_state = STATE_NAMING_FILE;
                 } else {
-                    save_to_sd(current_filename);
+                    save_to_sd(current_filename, text_buffer, target_addr);
                 }
             }
             else if (key_code == KEY_F3) {
