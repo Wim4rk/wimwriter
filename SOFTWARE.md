@@ -1,3 +1,12 @@
+# Systemarkitektur
+
+Text hanteras i en textfil i bakgrunden. Skärmen är en display. Textfilen uppdaterar skärmen, skärmen kan inte uppdatera textfilen.
+
+* **Modellen - dokumentbufferten**. Hanterar hela dokumentet oberoende av skärmens dimenskioner. När jag matar in text via tanngentbordet fånger evdev upp detta och uppdaterar modellen omedelbart. Eftersom vi tänker tillåta redigering inuti texten, kan en datastruktur som en *gap buffer* vara en lämplig väg att undersöka.
+*  **Vyn - skärmbuffet**. Fungerar enbart som ett temporärt fönster över en spevifik del av modellen.
+*  **IT8951 och SPI**. Nör texten läggs till i modellen utvärderas vyn. Endast den yta som faktiskt förändrats (damage box) överförs via SPI till IT8951-kontrollern.
+
+---
 # Specifikationer för skrivmiljön
 
 ## Minimalistisk skrivyta
@@ -75,6 +84,10 @@ Rensa bara skärmen, ge mig en ny skrivyta. Möjligtvis en notering i statusrade
 ### F5 - Uppdatera skärmen
 
 Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess innehåll återställs så fort som möjligt.
+
+### F6 - Font (teckenstorlek)
+
+Skall byta mellan två olika teckenstorlekar. Mest för att testa olika fonter. Koden är i stort sett på plats.
 
 ### F9 - Synkronisera
 

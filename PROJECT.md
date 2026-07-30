@@ -4,12 +4,11 @@
 
 ## Prioriterade action points - Att göra
 
-* Statusraden renderas på fel ställe. Uppe till höger, och den skriver åt vänster. Vi har löst det problemet många gånger.
-* Ctrl + backspace
 * Om jag skriver för fort när skärmen gör stora uppdateringar så renderas inte allt det jag skriver. Jag vill att det ska buffras upp och hinna ikapp. Måhända kan bufferten stitchas så att hela texten renderas på en gång?
-* Bokstäver med shift har strulat lite. Undersök och förbättra.
 * Hur kan latensen förbättras? Just nu är maskinen på gränsen till användbar. Minsta förbättring skulle göra den ruskigt bra.
+- Försök genomförs just nu att skicka mindre teckenyta och istället sprida ut tecknen med mer avstånd mellan dem.
 * Specialtecken. Vilka tecken har jag tillgång till? Ett bra filformat att kunna skriva är Markdown. Då krävs att ett antal specialtecken kan användas.
+* Bokstäver med shift har strulat lite. Undersök och förbättra.
 
 ---
 
