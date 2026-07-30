@@ -132,19 +132,20 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    int jump_offset = JUMP_LINES * current_max_cols;
+    // Räkna ut hur mycket minne som utgör de rader vi vill behålla
+    int keep_chars = JUMP_LINES * current_max_cols;
     int total_chars = current_max_rows * current_max_cols;
 
-    // 1. Flytta hela textblocket uppåt i RAM i en enda operation
-    memmove(buffer, buffer + jump_offset, total_chars - jump_offset);
+    // 1. Flytta de nedersta raderna (JUMP_LINES) till toppen av skärmen i RAM
+    memmove(buffer, buffer + (total_chars - keep_chars), keep_chars);
 
-    // 2. Töm de nedersta raderna som nu är lediga
-    memset(buffer + (total_chars - jump_offset), ' ', jump_offset);
+    // 2. Töm resten av skärmytan (allt efter de rader vi precis flyttade upp)
+    memset(buffer + keep_chars, ' ', total_chars - keep_chars);
 
-    // 3. Justera endast radpekaren (kolumnen bibehålls)
-    *cursor_row -= JUMP_LINES;
+    // 3. Sätt skrivprompten på raden direkt under den sparade texten
+    *cursor_row = JUMP_LINES;
 
-    // 4. Överför hela den uppdaterade skärmen
+    // 4. Uppdatera hela skärmen
     stitch_and_render_screen(buffer, target_addr);
 }
 
@@ -214,15 +215,20 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
         *cursor_col = word_len;
 
         if (*cursor_row >= current_max_rows) {
-            // Låt hoppet sköta all utritning om vi slår i botten
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-        } else {
+            // FIX: Klistra in ordet i RAM på den "dolda" raden innan vi hoppar
             int new_row_start = (*cursor_row) * current_max_cols;
             for (int i = 0; i < word_len; i++) {
                 buffer[new_row_start + i] = temp_str[i];
             }
 
-            // 3. Ett enda grafiskt anrop över SPI!
+            // Låt hoppet sköta all utritning, nu följer ordet med!
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        } else {
+            // (Behåll din befintliga else-logik här)
+            int new_row_start = (*cursor_row) * current_max_cols;
+            for (int i = 0; i < word_len; i++) {
+                buffer[new_row_start + i] = temp_str[i];
+            }
             render_rows_stitched(old_row, *cursor_row, buffer, target_addr);
         }
 

@@ -81,15 +81,19 @@ static void generate_default_filename(void){
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
-    // 1. Logik för Datamodellen (RAM)
-    if (c == 127) {
-        model_delete_char();
-    } else if ((c >= 32 && c <= 126) || c == '\n') {
-        model_insert_char(c);
-    }
+    // Om det är Ctrl + Backspace vill vi inte köra standard-model_delete här
+    bool is_ctrl_bs = (c == 127 && keyboard_is_ctrl_pressed());
 
-    // Kontinuerlig lagring till SD-kort
-    append_to_temp_file(c);
+    // 1. Logik för Datamodellen (RAM)
+    if (!is_ctrl_bs) {
+        if (c == 127) {
+            model_delete_char();
+        } else if ((c >= 32 && c <= 126) || c == '\n') {
+            model_insert_char(c);
+        }
+        // Kontinuerlig lagring till SD-kort
+        append_to_temp_file(c);
+    }
 
     if (c == 127 && pending_start_col != -1) {
         // 1. Tecknet har inte ritats ut, så vi raderar det bara logiskt i RAM.
@@ -120,20 +124,39 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
         case 127: // Backspace
             if (keyboard_is_ctrl_pressed()) {
                 int start_col = *cursor_col;
+
+                // 1. Hoppa över eventuella mellanslag precis bakom markören först
+                while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) == ' ') {
+                    start_col--;
+                }
+
+                // 2. Leta därefter bakåt tills vi hittar nästa mellanslag (för att hitta ordets början)
                 while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) != ' ') {
                     start_col--;
                 }
 
                 int word_len = *cursor_col - start_col;
                 if (word_len > 0) {
+
+                    // 3. Rensa vyn (text_buffer)
                     for (int i = start_col; i < *cursor_col; i++) {
                         BUF_AT(text_buffer, *cursor_row, i) = '\0';
                     }
 
+                    // 4. Synka underliggande datamodell (GAP-bufferten)
+                    // Observera: "model_delete_char()" anropades redan 1 gång i toppen
+                    // av process_text_input, därför loopar vi word_len - 1.
+                    for (int i = 0; i < word_len - 1; i++) {
+                        model_delete_char();
+                    }
+
+                    // 5. Rensa skärmen fysiskt i A2-läge.
+                    // X-koordinaten sätts till den visuellt sista bokstaven (pga rotation)
                     int px_back = get_physical_x(*cursor_col - 1);
                     int py_back = get_physical_y(*cursor_row);
+                    clear_area(px_back, py_back, word_len * current_font.width, current_font.height, target_addr);
 
-                    render_char(' ', px_back, py_back, target_addr);
+                    *cursor_col = start_col;
                 }
             } else {
                 if (*cursor_col > 0) {
