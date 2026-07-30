@@ -35,7 +35,8 @@ SRCS = main.c \
        lib/e-Paper/EPD_IT8951.c \
        software/editor.c \
        software/file_io.c \
-       software/sync.c
+       software/sync.c\
+       software/model.c
 
 # Generera namn på objektfiler (.o) baserat på källfilerna (.c)
 OBJS = $(SRCS:.c=.o)

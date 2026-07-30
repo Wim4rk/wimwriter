@@ -5,5 +5,7 @@
 #include "../firmware/display.h"
 
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
+void append_to_temp_file(char c);
+void save_buffer_to_file(const char *filename, const char *buffer, int max_rows, int max_cols);
 
 #endif

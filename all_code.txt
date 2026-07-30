@@ -11,6 +11,67 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
 -e 
 ========== SLUT PÅ: ./software/file_io.h ==========
 
+========== BÖRJAN PÅ: ./software/model.c ==========
+#include "model.h"
+
+GapBuffer document_model;
+
+void model_init(void) {
+    document_model.gap_start = 0;
+    document_model.gap_end = MAX_DOC_SIZE;
+}
+
+void model_insert_char(char c) {
+    // Om luckan är full har vi nått dokumentets maxstorlek
+    if (document_model.gap_start == document_model.gap_end) {
+        return;
+    }
+
+    // Skriv tecknet och flytta luckans start framåt
+    document_model.data[document_model.gap_start] = c;
+    document_model.gap_start++;
+}
+
+void model_delete_char(void) {
+    // Backspace: Flytta luckans start bakåt om vi inte är i början
+    if (document_model.gap_start > 0) {
+        document_model.gap_start--;
+    }
+}
+
+void model_move_cursor_left(void) {
+    if (document_model.gap_start > 0) {
+        document_model.gap_start--;
+        document_model.gap_end--;
+        // Flytta tecknet före luckan till luckans slut
+        document_model.data[document_model.gap_end] = document_model.data[document_model.gap_start];
+    }
+}
+
+void model_move_cursor_right(void) {
+    if (document_model.gap_end < MAX_DOC_SIZE) {
+        // Flytta tecknet efter luckan till luckans start
+        document_model.data[document_model.gap_start] = document_model.data[document_model.gap_end];
+        document_model.gap_start++;
+        document_model.gap_end++;
+    }
+}
+
+int model_get_text_length(void) {
+    return document_model.gap_start + (MAX_DOC_SIZE - document_model.gap_end);
+}
+
+char model_char_at(int index) {
+    if (index < document_model.gap_start) {
+        return document_model.data[index];
+    } else {
+        // Hoppa över luckan vid läsning
+        return document_model.data[index + (document_model.gap_end - document_model.gap_start)];
+    }
+}
+-e 
+========== SLUT PÅ: ./software/model.c ==========
+
 ========== BÖRJAN PÅ: ./software/sync.c ==========
 -e 
 ========== SLUT PÅ: ./software/sync.c ==========
@@ -41,11 +102,50 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 -e 
 ========== SLUT PÅ: ./software/editor.h ==========
 
+========== BÖRJAN PÅ: ./software/model.h ==========
+#ifndef MODEL_H
+#define MODEL_H
+
+#include <stdbool.h>
+
+// En fast gräns för hur stort ett dokument kan vara i RAM (t.ex. 1 MB = ~1 miljon tecken)
+#define MAX_DOC_SIZE (1024 * 1024)
+
+typedef struct {
+    char data[MAX_DOC_SIZE];
+    int gap_start;  // Index där luckan börjar
+    int gap_end;    // Index där luckan slutar
+} GapBuffer;
+
+// Global instans av vår modell
+extern GapBuffer document_model;
+
+// Initierar en tom modell
+void model_init(void);
+
+// Textmanipulation
+void model_insert_char(char c);
+void model_delete_char(void);
+
+// Navigering (flyttar luckan i minnet)
+void model_move_cursor_left(void);
+void model_move_cursor_right(void);
+
+// Hjälpfunktioner för vyn
+int model_get_text_length(void);
+char model_char_at(int index);
+
+#endif // MODEL_H
+-e 
+========== SLUT PÅ: ./software/model.h ==========
+
 ========== BÖRJAN PÅ: ./software/file_io.c ==========
 #include "file_io.h"
 #include "../firmware/display.h"
 #include <stdio.h>
 #include <string.h>
+
+static FILE *temp_file = NULL;
 
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     memset(buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS); // Rensar hela den allokerade ytan
@@ -57,6 +157,59 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
 
     // Skicka med target_addr här
     stitch_and_render_screen(buffer, target_addr);
+}
+
+void append_to_temp_file(char c) {
+    if (temp_file == NULL) {
+        // Öppna i append-läge. Dold fil.
+        temp_file = fopen(".wimwriter_temp.txt", "a");
+    }
+
+    if (temp_file != NULL) {
+        if (c == 127) {
+            // Vid backspace loggar vi en speciell markör eller hanterar logiken
+            // Enklast i en rå logg är att bara skriva ett styrtecken, t.ex. <BS>
+            fputs("<BS>", temp_file);
+        } else {
+            fputc(c, temp_file);
+        }
+        // OBS: Undvik fflush(temp_file) här för att låta Linux sköta cachen
+        // asynkront och därmed skona ARMv6-processorn från blockeringar.
+    }
+}
+
+void save_buffer_to_file(const char *filename, const char *buffer, int max_rows, int max_cols) {
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        return; // Här kan felhantering/statusmeddelande läggas till
+    }
+
+    // Iterera över bufferten och skriv till fil
+    for (int r = 0; r < max_rows; r++) {
+        int last_char_in_row = -1;
+
+        // Hitta var raden slutar för att slippa spara onödiga mellanslag
+        for (int c = max_cols - 1; c >= 0; c--) {
+            char ch = buffer[(r * max_cols) + c];
+            if (ch != ' ' && ch != '\0') {
+                last_char_in_row = c;
+                break;
+            }
+        }
+
+        // Skriv radens tecken
+        for (int c = 0; c <= last_char_in_row; c++) {
+            char ch = buffer[(r * max_cols) + c];
+            if (ch >= 32 && ch <= 126) {
+                fputc(ch, file);
+            }
+        }
+
+        // Lägg till radbrytning om det finns data, eller om det är en medveten tom rad
+        fputc('\n', file);
+    }
+
+    fclose(file);
 }
 -e 
 ========== SLUT PÅ: ./software/file_io.c ==========
@@ -88,8 +241,17 @@ static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 static void show_file_in_status_bar(void) {}
 static void show_next_file(void) {}
-static void save_to_sd(const char *filename) {}
 static void force_full_redraw(void) {}
+
+static void save_to_sd(const char *filename) {
+    // Anropar funktionen i file_io.c
+    save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
+
+    // Visuell bekräftelse i statusraden
+    char status_text[256];
+    snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
+    render_status_bar(status_text, target_addr);
+}
 
 static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
     // Om du vill implementera städningen direkt kan du lägga in:
@@ -309,7 +471,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 // TODO: load_file_into_buffer(...)
                 force_full_redraw();
                 current_state = STATE_EDITING;
-                process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr);
+                process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
             }
             break;
 
@@ -343,6 +505,18 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_EDITING;
             }
             break;
+
+            // Felsökningsutskrift till terminalen
+            if (c == '\n') {
+                putchar('\n');
+            } else if (c == 127) {
+                // Backspace i terminalen (flytta markör bakåt, skriv över med mellanslag, flytta bakåt igen)
+                printf("\b \b");
+            } else if (c >= 32 && c <= 126) {
+                putchar(c);
+            }
+            // stdout är radbuffrad som standard, så vi tvingar fram utskriften
+            fflush(stdout);
     }
 }
 -e 
@@ -456,6 +630,7 @@ void redraw_buffer(char *buffer, UDOUBLE target_addr);
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr);
+void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr);
 
 void calculate_layout_points(int font_w, int font_h);
 
@@ -529,9 +704,6 @@ void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE 
 
 void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     if (width <= 0 || height <= 0) return;
-
-    int size = width * height;
-
     // Statisk buffert för att undvika malloc i skrivloopen.
     // Stor nog för att radera mer än en hel textrad (1448 * 64 px).
     static UBYTE white_buffer[98500];
@@ -695,7 +867,7 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
         current_x -= current_font.width;
     }
 
-    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(stitch_buffer, physical_x, physical_y, text_pixel_width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
@@ -930,12 +1102,16 @@ char keyboard_get_char(struct input_event *ev) {
 #include <unistd.h>
 #include <stdbool.h>
 #include <linux/input.h>
-#include <poll.h> // Krävs för asynkron inmatning
+#include <sys/epoll.h> // Krävs för asynkron inmatning
+#include <fcntl.h>
+#include <string.h>
+
 #include "firmware/display.h"
 #include "firmware/keyboard.h"
 #include "software/editor.h" // Inkludera vår nya tillståndsmaskin
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
+#define MAX_EVENTS 5
 
 // Allokera en fast minnesyta som rymmer den minsta tänkbara fonten
 char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
@@ -945,6 +1121,13 @@ void clear_buffer() {
     memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
 }
 
+// Hjälpfunktion för att sätta filbeskrivaren i icke-blockerande läge
+static int set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
 int main() {
     UDOUBLE target_addr;
 
@@ -952,7 +1135,7 @@ int main() {
     init_display(&target_addr);
 
     printf("Initierar font...\n");
-    set_active_font(1);
+    set_active_font(2);
     calculate_layout_points(current_font.width, current_font.height);
 
     printf("Kopplar upp tangentbord...\n");
@@ -963,6 +1146,9 @@ int main() {
         return 1;
     }
 
+    // Aktivera icke-blockerande I/O för tangentbordet
+    set_nonblocking(kb_fd);
+
     printf("Rensar buffer...\n");
 
     clear_buffer();
@@ -971,59 +1157,59 @@ int main() {
     int cursor_col = 0;
     int cursor_row = JUMP_LINES;
 
-    // Konfigurera poll
-    struct pollfd fds[1];
-    fds[0].fd = kb_fd;
-    fds[0].events = POLLIN;
+    // Initiera epoll
+    int epoll_fd = epoll_create1(0);
+    struct epoll_event ev_epoll, events[MAX_EVENTS];
+    ev_epoll.events = EPOLLIN;
+    ev_epoll.data.fd = kb_fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, kb_fd, &ev_epoll);
 
     printf("WimWriter redo!\n");
 
     struct input_event ev;
-
     bool prompt_visible = false;
-    int prompt_px = 0;
-    int prompt_py = 0;
+    int prompt_px = 0, prompt_py = 0;
     int prompt_timeout_ms = 800;
 
     // Main loop - CPU rests in read() until interrupt from keyboard
     while (1) {
-        int ret = poll(fds, 1, prompt_timeout_ms);
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, prompt_timeout_ms);
 
-        if (ret == 0) {
+        if (nfds == 0) {
             // TIMEOUT: inaktivitet har passerat
             if (!prompt_visible) {
                 prompt_px = get_physical_x(cursor_col);
                 prompt_py = get_physical_y(cursor_row);
 
-                // Rita ut understrecket i snabba A2-läget
-                render_char('_', px, py, target_addr);
+                // Rita ut understrecket i A2-läget
+                render_char('_', prompt_px, prompt_py, target_addr);
                 prompt_visible = true;
+
+                // TODO: Eventuellt trigga spolning till temp-fil här
             }
-        } else if (ret > 0) {
-            // HÄNDELSE: Data finns att läsa från tangentbordet
-            if (fds[0].revents & POLLIN) {
-                if (read(kb_fd, &ev, sizeof(ev)) > 0) {
-                    if (ev.type == EV_KEY) {
+        } else if (nfds > 0) {
+            for (int n = 0; n < nfds; n++) {
+                if (events[n].data.fd == kb_fd) {
+                    // Läs tömmer bufferten tills EAGAIN returneras
+                    while (read(kb_fd, &ev, sizeof(ev)) > 0) {
+                        if (ev.type == EV_KEY) {
 
-                        // Städa bort prompten om den är synlig
+                            // Städa bort prompten
+                            if (prompt_visible) {
+                                render_char(' ', prompt_px, prompt_py, target_addr);
+                                prompt_visible = false;
+                            }
 
-                        if (prompt_visible) {
-                            render_char(' ', prompt_px, prompt_py, target_addr);
-                            prompt_visible = false;
+                            bool more_keys_waiting = false;
+                            handle_input(&ev, target_addr, text_buffer, &cursor_row, &cursor_col, more_keys_waiting);
                         }
-
-                        //Kika om det finns fler tecken i kön?
-                        int peek = poll(fds, 1, 0);
-                        bool more_keys_waiting = (peek > 0);
-
-                        // Skicka tangenttryckningen och nuvarande state till editor.c
-                        handle_input(&ev, target_addr, text_buffer, &cursor_row, &cursor_col, more_keys_waiting);
                     }
                 }
             }
         }
     }
 
+    close(epoll_fd);
     keyboard_close(kb_fd);
     cleanup_display();
     return 0;

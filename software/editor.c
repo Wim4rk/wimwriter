@@ -1,9 +1,10 @@
-#include "editor.h"
-#include "file_io.h"
-#include "../firmware/keyboard.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "editor.h"
+#include "file_io.h"
+#include "../firmware/keyboard.h"
+#include "model.h"
 
 EditorState current_state = STATE_EDITING;
 
@@ -24,8 +25,17 @@ static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 static void show_file_in_status_bar(void) {}
 static void show_next_file(void) {}
-static void save_to_sd(const char *filename) {}
 static void force_full_redraw(void) {}
+
+static void save_to_sd(const char *filename) {
+    // Anropar funktionen i file_io.c
+    save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
+
+    // Visuell bekräftelse i statusraden
+    char status_text[256];
+    snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
+    render_status_bar(status_text, target_addr);
+}
 
 static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
     // Om du vill implementera städningen direkt kan du lägga in:
@@ -71,20 +81,34 @@ static void generate_default_filename(void){
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
-    // Tvinga fram catch-up vid backspace
+    // 1. Logik för Datamodellen (RAM)
+    if (c == 127) {
+        model_delete_char();
+    } else if ((c >= 32 && c <= 126) || c == '\n') {
+        model_insert_char(c);
+    }
+
+    // Kontinuerlig lagring till SD-kort
+    append_to_temp_file(c);
+
     if (c == 127 && pending_start_col != -1) {
-        int len = *cursor_col - pending_start_col;
-        char temp_str[len + 1];
-        for (int i = 0; i < len; i++) {
-            temp_str[i] = BUF_AT(text_buffer, *cursor_row, pending_start_col + i);
+        // 1. Tecknet har inte ritats ut, så vi raderar det bara logiskt i RAM.
+        if (*cursor_col > pending_start_col) {
+            (*cursor_col)--;
+            BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
+
+            // Radera från den underliggande datamodellen
+            model_delete_char();
         }
-        temp_str[len] = '\0';
 
-        int px = get_physical_x(pending_start_col);
-        int py = get_physical_y(*cursor_row);
-        render_stitched_text(temp_str, px, py, target_addr);
+        // 2. Om raderingen tömde hela kön, nollställ flaggan
+        if (*cursor_col == pending_start_col) {
+            pending_start_col = -1;
+        }
 
-        pending_start_col = -1;
+        // 3. Vi är klara med raderingen. Avbryt funktionen så att
+        // den vanliga backspace-logiken (med SPI-anropet) inte körs.
+        return;
     }
 
     switch (c) {
@@ -107,7 +131,8 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                     (*cursor_col)--;
                 }
             } else {
-                // Vi är i det absoluta övre vänstra hörnet, avbryt radering
+                // Vi är i det absoluta övre vänstra hörnet, avbryt radering.
+                // Eller ska vi ge möjlighet att rendera om skärmen ovanför och
                 break;
             }
 
@@ -163,6 +188,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 }
 
                 // Hantera automatisk radbrytning
+                // Kolla om det är här som jag får en för tidig radbrytning?
                 if (*cursor_col >= current_max_cols) {
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
                     // Om raden bryts nollställer vi kön
@@ -213,8 +239,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_FILE_SWITCH;
             }
             else if (key_code == KEY_F4) {
-
-
+                // TODO: Ny fil
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
@@ -279,5 +304,17 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_EDITING;
             }
             break;
+
+            // Felsökningsutskrift till terminalen
+            if (c == '\n') {
+                putchar('\n');
+            } else if (c == 127) {
+                // Backspace i terminalen (flytta markör bakåt, skriv över med mellanslag, flytta bakåt igen)
+                printf("\b \b");
+            } else if (c >= 32 && c <= 126) {
+                putchar(c);
+            }
+            // stdout är radbuffrad som standard, så vi tvingar fram utskriften
+            fflush(stdout);
     }
 }
