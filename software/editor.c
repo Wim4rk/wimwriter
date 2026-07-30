@@ -45,7 +45,7 @@ static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
 
 // Bygger strängen och skickar den till skärmen
 static void update_status_bar_visuals(UDOUBLE target_addr) {
-    char status_text[256];
+    char status_text[300];
     snprintf(status_text, sizeof(status_text), "Spara som: %s", current_filename);
     render_status_bar(status_text, target_addr);
 }
