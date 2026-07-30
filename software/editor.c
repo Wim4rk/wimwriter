@@ -118,7 +118,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             break;
 
         case 127: // Backspace
-            if (ctrl_pressed) {
+            if (keyboard_is_ctrl_pressed()) {
                 int start_col = *cursor_col;
                 while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) != ' ') {
                     start_col--;
@@ -133,8 +133,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                     int px_back = get_physical_x(*cursor_col - 1);
                     int py_back = get_physical_y(*cursor_row);
 
-                    clear_area(start_col, *cursor_row, word_len, 1);
-                    *cursor_col = start_col;
+                    render_char(' ', px_back, py_back, target_addr);
                 }
             } else {
                 if (*cursor_col > 0) {
