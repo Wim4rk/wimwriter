@@ -6,6 +6,8 @@
 #include "../firmware/display.h"
 
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
+void append_to_temp_file(char c);
+void save_buffer_to_file(const char *filename, const char *buffer, int max_rows, int max_cols);
 
 #endif
 -e 
@@ -215,12 +217,13 @@ void save_buffer_to_file(const char *filename, const char *buffer, int max_rows,
 ========== SLUT PÅ: ./software/file_io.c ==========
 
 ========== BÖRJAN PÅ: ./software/editor.c ==========
-#include "editor.h"
-#include "file_io.h"
-#include "../firmware/keyboard.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "editor.h"
+#include "file_io.h"
+#include "../firmware/keyboard.h"
+#include "model.h"
 
 EditorState current_state = STATE_EDITING;
 
@@ -248,7 +251,7 @@ static void save_to_sd(const char *filename) {
     save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
 
     // Visuell bekräftelse i statusraden
-    char status_text[256];
+    char status_text[300];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
 }
@@ -297,20 +300,34 @@ static void generate_default_filename(void){
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
-    // Tvinga fram catch-up vid backspace
+    // 1. Logik för Datamodellen (RAM)
+    if (c == 127) {
+        model_delete_char();
+    } else if ((c >= 32 && c <= 126) || c == '\n') {
+        model_insert_char(c);
+    }
+
+    // Kontinuerlig lagring till SD-kort
+    append_to_temp_file(c);
+
     if (c == 127 && pending_start_col != -1) {
-        int len = *cursor_col - pending_start_col;
-        char temp_str[len + 1];
-        for (int i = 0; i < len; i++) {
-            temp_str[i] = BUF_AT(text_buffer, *cursor_row, pending_start_col + i);
+        // 1. Tecknet har inte ritats ut, så vi raderar det bara logiskt i RAM.
+        if (*cursor_col > pending_start_col) {
+            (*cursor_col)--;
+            BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
+
+            // Radera från den underliggande datamodellen
+            model_delete_char();
         }
-        temp_str[len] = '\0';
 
-        int px = get_physical_x(pending_start_col);
-        int py = get_physical_y(*cursor_row);
-        render_stitched_text(temp_str, px, py, target_addr);
+        // 2. Om raderingen tömde hela kön, nollställ flaggan
+        if (*cursor_col == pending_start_col) {
+            pending_start_col = -1;
+        }
 
-        pending_start_col = -1;
+        // 3. Vi är klara med raderingen. Avbryt funktionen så att
+        // den vanliga backspace-logiken (med SPI-anropet) inte körs.
+        return;
     }
 
     switch (c) {
@@ -320,21 +337,56 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             break;
 
         case 127: // Backspace
-            if (*cursor_col > 0) {
-                // Normal radering på nuvarande rad
-                (*cursor_col)--;
-            } else if (*cursor_row > 0) {
-                // Vi är på kolumn 0, hoppa upp en rad
-                (*cursor_row)--;
-                *cursor_col = current_max_cols - 1;
+            if (ctrl_pressed) {
+                int start_col = *cursor_col;
+                while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) != ' ') {
+                    start_col--;
+                }
 
-                // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
-                while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
-                    (*cursor_col)--;
+                int word_len = *cursor_col - start_col;
+                if (word_len > 0) {
+                    for (int i = start_col; i < *cursor_col; i++) {
+                        BUF_AT(text_buffer, *cursor_row, i) = '\0';
+                    }
+
+                    int px_back = get_physical_x(*cursor_col - 1);
+                    int py_back = get_physical_y(*cursor_row);
+
+                    clear_area(start_col, *cursor_row, word_len, 1);
+                    *cursor_col = start_col;
                 }
             } else {
-                // Vi är i det absoluta övre vänstra hörnet, avbryt radering
-                break;
+                if (*cursor_col > 0) {
+                    // 1. Backa markören logiskt
+                    (*cursor_col)--;
+
+                    // 2. Ta bort tecknet från dokumentbufferten (din vy)
+                    BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
+
+                    // Radera från den underliggande datamodellen (GAP-buffert/temp-fil)
+                    // model_delete_char();
+
+                    // 3. Hämta fysiska koordinater för den NYA (backade) markörpositionen
+                    int px_back = get_physical_x(*cursor_col);
+                    int py_back = get_physical_y(*cursor_row);
+
+                    // 4. Rendera ett mellanslag.
+                    // Detta skickar den förladdade vita bitmappen från RAM direkt över SPI i A2-läge.
+                    render_char(' ', px_back, py_back, target_addr);
+                } else if (*cursor_row > 0) {
+                    // Vi är på kolumn 0, hoppa upp en rad
+                    (*cursor_row)--;
+                    *cursor_col = current_max_cols - 1;
+
+                    // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
+                    while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
+                        (*cursor_col)--;
+                    }
+                } else {
+                    // Vi är i det absoluta övre vänstra hörnet, avbryt radering.
+                    // Eller ska vi ge möjlighet att rendera om skärmen ovanför och
+                    break;
+                }
             }
 
             // 1. Logisk radering i RAM-minnet
@@ -389,6 +441,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 }
 
                 // Hantera automatisk radbrytning
+                // Kolla om det är här som jag får en för tidig radbrytning?
                 if (*cursor_col >= current_max_cols) {
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
                     // Om raden bryts nollställer vi kön
@@ -439,8 +492,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_FILE_SWITCH;
             }
             else if (key_code == KEY_F4) {
-
-
+                // TODO: Ny fil
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
@@ -666,7 +718,8 @@ int point_y[ABSOLUTE_MAX_ROWS];
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
 
-void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode) {
+// Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
+void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr) {
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
 
@@ -697,8 +750,15 @@ void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE 
 
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
+}
 
-    // Trigga utritningen i valt läge (t.ex. A2_MODE)
+// Din befintliga funktion (omskriven).
+// Andra delar av koden som anropar denna kommer att fungera precis som förut.
+void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode) {
+    // 1. Skicka datan till minnet
+    send_buffer_to_ram(buffer, x, y, w, h, target_addr);
+
+    // 2. Trigga utritningen
     EPD_IT8951_Display_Area(x, y, w, h, update_mode);
 }
 
@@ -784,8 +844,50 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
     stitch_and_render_screen(buffer, target_addr);
 }
 
+// Ny hjälpfunktion: Renderar en eller flera hela rader i ett enda anrop
+void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE target_addr) {
+    if (start_row < 0) start_row = 0;
+    if (end_row >= current_max_rows) end_row = current_max_rows - 1;
+    if (start_row > end_row) return;
+
+    int num_rows = end_row - start_row + 1;
+    int physical_w = SCREEN_WIDTH;
+    int physical_h = num_rows * current_font.height;
+
+    // Fysisk Y-koordinat för den översta visuella radens överkant (som rent fysiskt är längst ner pga rotationen)
+    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * current_font.height);
+
+    // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
+    static UBYTE row_buffer[1448 * 128];
+    memset(row_buffer, 0xFF, physical_w * physical_h); // Fyll hela ytan med vitt (raderar därmed allt gammalt)
+
+    // Rita in alla faktiska tecken från textbufferten in i denna nya vita låda
+    for (int r = start_row; r <= end_row; r++) {
+        for (int c = 0; c < current_max_cols; c++) {
+            char ch = BUF_AT(buffer, r, c);
+            if (ch >= 32 && ch <= 126 && ch != ' ') {
+                const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
+                int char_px = SCREEN_WIDTH - MARGIN_LEFT - ((c + 1) * current_font.width);
+                int char_py_abs = SCREEN_HEIGHT - MARGIN_TOP - ((r + 1) * current_font.height);
+                int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
+
+                // Kopiera in glyfen i lokala bufferten
+                for (int h = 0; h < current_font.height; h++) {
+                    memcpy(&row_buffer[(rel_y + h) * physical_w + char_px],
+                           &glyph[h * current_font.width],
+                           current_font.width);
+                }
+            }
+        }
+    }
+
+    // ETT enda massivt SPI-anrop för att radera det gamla ordet och rita dit det nya
+    send_and_display_buffer(row_buffer, 0, physical_y_start, physical_w, physical_h, target_addr, IT8951_A2_MODE);
+}
+
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    int row_start = *cursor_row * current_max_cols;
+    int old_row = *cursor_row;
+    int row_start = old_row * current_max_cols;
     int break_col = *cursor_col - 1;
 
     // Leta bakåt efter senaste mellanslaget
@@ -796,26 +898,29 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     if (break_col > 0) {
         int word_len = *cursor_col - break_col - 1;
 
-        // 1. Rensa fysiskt i A2-läge för ordets gamla position
-        int clear_px = SCREEN_WIDTH - MARGIN_LEFT - (*cursor_col * current_font.width);
-        int clear_py = SCREEN_HEIGHT - MARGIN_TOP - ((*cursor_row + 1) * current_font.height);
-        clear_area(clear_px, clear_py, word_len * current_font.width, current_font.height, target_addr);
-
-        // 2. Stega fram en rad och trigga jump om nödvändigt
-        (*cursor_row)++;
-        if (*cursor_row >= current_max_rows) {
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-            row_start = *cursor_row * current_max_cols;
+        // 1. Plocka ut ordet till RAM och städa (skriv över med ' ') i textmodellen
+        char temp_str[word_len + 1];
+        for (int i = 0; i < word_len; i++) {
+            temp_str[i] = buffer[row_start + break_col + 1 + i];
+            buffer[row_start + break_col + 1 + i] = ' ';
         }
 
-        // 3. Flytta ordet i RAM
-        memmove(&buffer[row_start], &buffer[row_start - current_max_cols + break_col + 1], word_len);
-        memset(&buffer[row_start - current_max_cols + break_col + 1], ' ', word_len);
-
+        // 2. Uppdatera markören till ny rad och sätt in ordet logiskt i textmodellen
+        (*cursor_row)++;
         *cursor_col = word_len;
 
-        // 4. Rita om ordet på den nya raden
-        // (Ett anrop till din funktion render_stitched_text är lämpligt här för att dumpa hela ordet direkt)
+        if (*cursor_row >= current_max_rows) {
+            // Låt hoppet sköta all utritning om vi slår i botten
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        } else {
+            int new_row_start = (*cursor_row) * current_max_cols;
+            for (int i = 0; i < word_len; i++) {
+                buffer[new_row_start + i] = temp_str[i];
+            }
+
+            // 3. Ett enda grafiskt anrop över SPI!
+            render_rows_stitched(old_row, *cursor_row, buffer, target_addr);
+        }
 
     } else {
         // Brutal radbrytning om inget mellanslag existerar

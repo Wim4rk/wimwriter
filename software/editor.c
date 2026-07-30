@@ -32,7 +32,7 @@ static void save_to_sd(const char *filename) {
     save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
 
     // Visuell bekräftelse i statusraden
-    char status_text[256];
+    char status_text[300];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
 }
@@ -118,22 +118,56 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             break;
 
         case 127: // Backspace
-            if (*cursor_col > 0) {
-                // Normal radering på nuvarande rad
-                (*cursor_col)--;
-            } else if (*cursor_row > 0) {
-                // Vi är på kolumn 0, hoppa upp en rad
-                (*cursor_row)--;
-                *cursor_col = current_max_cols - 1;
+            if (ctrl_pressed) {
+                int start_col = *cursor_col;
+                while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) != ' ') {
+                    start_col--;
+                }
 
-                // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
-                while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
-                    (*cursor_col)--;
+                int word_len = *cursor_col - start_col;
+                if (word_len > 0) {
+                    for (int i = start_col; i < *cursor_col; i++) {
+                        BUF_AT(text_buffer, *cursor_row, i) = '\0';
+                    }
+
+                    int px_back = get_physical_x(*cursor_col - 1);
+                    int py_back = get_physical_y(*cursor_row);
+
+                    clear_area(start_col, *cursor_row, word_len, 1);
+                    *cursor_col = start_col;
                 }
             } else {
-                // Vi är i det absoluta övre vänstra hörnet, avbryt radering.
-                // Eller ska vi ge möjlighet att rendera om skärmen ovanför och
-                break;
+                if (*cursor_col > 0) {
+                    // 1. Backa markören logiskt
+                    (*cursor_col)--;
+
+                    // 2. Ta bort tecknet från dokumentbufferten (din vy)
+                    BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
+
+                    // Radera från den underliggande datamodellen (GAP-buffert/temp-fil)
+                    // model_delete_char();
+
+                    // 3. Hämta fysiska koordinater för den NYA (backade) markörpositionen
+                    int px_back = get_physical_x(*cursor_col);
+                    int py_back = get_physical_y(*cursor_row);
+
+                    // 4. Rendera ett mellanslag.
+                    // Detta skickar den förladdade vita bitmappen från RAM direkt över SPI i A2-läge.
+                    render_char(' ', px_back, py_back, target_addr);
+                } else if (*cursor_row > 0) {
+                    // Vi är på kolumn 0, hoppa upp en rad
+                    (*cursor_row)--;
+                    *cursor_col = current_max_cols - 1;
+
+                    // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
+                    while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
+                        (*cursor_col)--;
+                    }
+                } else {
+                    // Vi är i det absoluta övre vänstra hörnet, avbryt radering.
+                    // Eller ska vi ge möjlighet att rendera om skärmen ovanför och
+                    break;
+                }
             }
 
             // 1. Logisk radering i RAM-minnet

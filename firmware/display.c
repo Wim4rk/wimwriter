@@ -22,7 +22,8 @@ int point_y[ABSOLUTE_MAX_ROWS];
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
 
-void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode) {
+// Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
+void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr) {
     IT8951_Load_Img_Info load_info;
     IT8951_Area_Img_Info area_info;
 
@@ -53,8 +54,15 @@ void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE 
 
     DEV_Digital_Write(EPD_CS_PIN, HIGH);
     EPD_IT8951_LoadImgEnd();
+}
 
-    // Trigga utritningen i valt läge (t.ex. A2_MODE)
+// Din befintliga funktion (omskriven).
+// Andra delar av koden som anropar denna kommer att fungera precis som förut.
+void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode) {
+    // 1. Skicka datan till minnet
+    send_buffer_to_ram(buffer, x, y, w, h, target_addr);
+
+    // 2. Trigga utritningen
     EPD_IT8951_Display_Area(x, y, w, h, update_mode);
 }
 
@@ -140,8 +148,50 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
     stitch_and_render_screen(buffer, target_addr);
 }
 
+// Ny hjälpfunktion: Renderar en eller flera hela rader i ett enda anrop
+void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE target_addr) {
+    if (start_row < 0) start_row = 0;
+    if (end_row >= current_max_rows) end_row = current_max_rows - 1;
+    if (start_row > end_row) return;
+
+    int num_rows = end_row - start_row + 1;
+    int physical_w = SCREEN_WIDTH;
+    int physical_h = num_rows * current_font.height;
+
+    // Fysisk Y-koordinat för den översta visuella radens överkant (som rent fysiskt är längst ner pga rotationen)
+    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * current_font.height);
+
+    // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
+    static UBYTE row_buffer[1448 * 128];
+    memset(row_buffer, 0xFF, physical_w * physical_h); // Fyll hela ytan med vitt (raderar därmed allt gammalt)
+
+    // Rita in alla faktiska tecken från textbufferten in i denna nya vita låda
+    for (int r = start_row; r <= end_row; r++) {
+        for (int c = 0; c < current_max_cols; c++) {
+            char ch = BUF_AT(buffer, r, c);
+            if (ch >= 32 && ch <= 126 && ch != ' ') {
+                const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
+                int char_px = SCREEN_WIDTH - MARGIN_LEFT - ((c + 1) * current_font.width);
+                int char_py_abs = SCREEN_HEIGHT - MARGIN_TOP - ((r + 1) * current_font.height);
+                int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
+
+                // Kopiera in glyfen i lokala bufferten
+                for (int h = 0; h < current_font.height; h++) {
+                    memcpy(&row_buffer[(rel_y + h) * physical_w + char_px],
+                           &glyph[h * current_font.width],
+                           current_font.width);
+                }
+            }
+        }
+    }
+
+    // ETT enda massivt SPI-anrop för att radera det gamla ordet och rita dit det nya
+    send_and_display_buffer(row_buffer, 0, physical_y_start, physical_w, physical_h, target_addr, IT8951_A2_MODE);
+}
+
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    int row_start = *cursor_row * current_max_cols;
+    int old_row = *cursor_row;
+    int row_start = old_row * current_max_cols;
     int break_col = *cursor_col - 1;
 
     // Leta bakåt efter senaste mellanslaget
@@ -152,26 +202,29 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     if (break_col > 0) {
         int word_len = *cursor_col - break_col - 1;
 
-        // 1. Rensa fysiskt i A2-läge för ordets gamla position
-        int clear_px = SCREEN_WIDTH - MARGIN_LEFT - (*cursor_col * current_font.width);
-        int clear_py = SCREEN_HEIGHT - MARGIN_TOP - ((*cursor_row + 1) * current_font.height);
-        clear_area(clear_px, clear_py, word_len * current_font.width, current_font.height, target_addr);
-
-        // 2. Stega fram en rad och trigga jump om nödvändigt
-        (*cursor_row)++;
-        if (*cursor_row >= current_max_rows) {
-            display_jump(buffer, cursor_row, cursor_col, target_addr);
-            row_start = *cursor_row * current_max_cols;
+        // 1. Plocka ut ordet till RAM och städa (skriv över med ' ') i textmodellen
+        char temp_str[word_len + 1];
+        for (int i = 0; i < word_len; i++) {
+            temp_str[i] = buffer[row_start + break_col + 1 + i];
+            buffer[row_start + break_col + 1 + i] = ' ';
         }
 
-        // 3. Flytta ordet i RAM
-        memmove(&buffer[row_start], &buffer[row_start - current_max_cols + break_col + 1], word_len);
-        memset(&buffer[row_start - current_max_cols + break_col + 1], ' ', word_len);
-
+        // 2. Uppdatera markören till ny rad och sätt in ordet logiskt i textmodellen
+        (*cursor_row)++;
         *cursor_col = word_len;
 
-        // 4. Rita om ordet på den nya raden
-        // (Ett anrop till din funktion render_stitched_text är lämpligt här för att dumpa hela ordet direkt)
+        if (*cursor_row >= current_max_rows) {
+            // Låt hoppet sköta all utritning om vi slår i botten
+            display_jump(buffer, cursor_row, cursor_col, target_addr);
+        } else {
+            int new_row_start = (*cursor_row) * current_max_cols;
+            for (int i = 0; i < word_len; i++) {
+                buffer[new_row_start + i] = temp_str[i];
+            }
+
+            // 3. Ett enda grafiskt anrop över SPI!
+            render_rows_stitched(old_row, *cursor_row, buffer, target_addr);
+        }
 
     } else {
         // Brutal radbrytning om inget mellanslag existerar
