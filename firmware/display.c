@@ -100,9 +100,8 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
 }
 
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
-    // Filtrera bort icke-utskrivbara tecken för att spara cykler
-    if (c < 32 || c > 126) return;
-    send_and_display_buffer(pre_flipped_glyphs[(unsigned char)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
+    // Släpp igenom svenska tecken, men blockera styrtecken under 32
+    if ((unsigned char)c < 32) return;
 }
 
 // Funktionen bygger font-cachen i RAM.
@@ -239,11 +238,11 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     if (break_col > 0) {
         int word_len = *cursor_col - break_col - 1;
 
-        // 1. Plocka ut ordet till RAM och städa (skriv över med ' ') i textmodellen
+        // 1. Plocka ut ordet till RAM och städa (skriv över med '\0') i textmodellen
         char temp_str[word_len + 1];
         for (int i = 0; i < word_len; i++) {
             temp_str[i] = buffer[row_start + break_col + 1 + i];
-            buffer[row_start + break_col + 1 + i] = ' ';
+            buffer[row_start + break_col + 1 + i] = '\0'; // Ändrat från ' ' till '\0'
         }
 
         // 2. Uppdatera markören till ny rad och sätt in ordet logiskt i textmodellen
