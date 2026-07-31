@@ -22,7 +22,7 @@
  * vid uppstart av maskinen.
  */
 extern const uint8_t wim_font_16x28[128][FONT_16X28_BYTES];
-extern const uint8_t wim_font_24x32[128][FONT_24X32_BYTES];
+extern const uint8_t wim_font_24x32[256][FONT_24X32_BYTES];
 extern const uint8_t wim_font_24x41[128][FONT_24X41_BYTES];
 
 #endif // WIM_FONTS_H
