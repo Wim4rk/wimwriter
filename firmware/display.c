@@ -111,8 +111,8 @@ void init_glyph_cache(void) {
     // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
     memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
 
-    // 2. Hantera endast giltiga ASCII-tecken för att spara cykler
-    for (int c = 32; c < 127; c++) {
+    // 2. Testar med Latin-1 tecken
+    for (int c = 32; c < 256; c++) {
         // Hämta startadressen för det enskilda tecknet i fontens rådata
         const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
 
