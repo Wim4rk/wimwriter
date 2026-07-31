@@ -11,7 +11,7 @@
 
 #define FONT_24X43_W 24
 #define FONT_24X43_H 43
-#define FONT_24X43_BYTES 984
+#define FONT_24X43_BYTES 1032
 
 /*
  * Typsnittsdatan deklareras externt här.
