@@ -2,6 +2,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "editor.h"
 #include "file_io.h"
 #include "../firmware/keyboard.h"
@@ -10,6 +12,8 @@
 EditorState current_state = STATE_EDITING;
 
 #define RENDER_THRESHOLD 8
+
+#define MAX_FILES_IN_DIR 50
 
 // Variabler för filhantering
 static bool is_suggested_name = false;
@@ -22,14 +26,19 @@ static int filename_len = 0;
 static char previous_filename[256] = "";
 static bool just_created_new_file = false;
 
+typedef struct {
+    char filename[256];
+    time_t last_modified;
+} FileEntry;
+
+static FileEntry file_list[MAX_FILES_IN_DIR];
+static int total_files_found = 0;
+
 // ==========================================
 // PLATSHÅLLARE (STUBS) - Fylls i senare
 // ==========================================
 static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
-static void show_file_in_status_bar(void) {}
-static void show_next_file(void) {}
-static void force_full_redraw(void) {}
 
 static void save_to_sd(const char *filename, UDOUBLE target_addr) {
     // Anropar funktionen som läser från RAM-modellen
@@ -81,6 +90,63 @@ static void generate_default_filename(void){
     snprintf(current_filename, sizeof(current_filename), "wim - %04d-%02d-%02d_%02d_%02d.txt",
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
     filename_len = strlen(current_filename);
+}
+
+static void scan_directory_for_files(void) {
+    DIR *d;
+    struct dirent *dir;
+    struct stat file_stat;
+
+    total_files_found = 0;
+    current_file_index = 0;
+
+    d = opendir("."); // Leta i nuvarande katalog
+    if (d) {
+        while ((dir = readdir(d)) != NULL && total_files_found < MAX_FILES_IN_DIR) {
+            // Kontrollera att det inte är en dold fil (t.ex. vår temp-fil)
+            if (dir->d_name[0] != '.') {
+
+                // Leta efter antingen .txt eller .md[cite: 1]
+                if (strstr(dir->d_name, ".txt") != NULL || strstr(dir->d_name, ".md") != NULL) {
+
+                    // Hämta ändringsdatum
+                    if (stat(dir->d_name, &file_stat) == 0) {
+                        strncpy(file_list[total_files_found].filename, dir->d_name, 255);
+                        file_list[total_files_found].last_modified = file_stat.st_mtime;
+                        total_files_found++;
+                    }
+                }
+            }
+        }
+        closedir(d);
+
+        // Sortera listan så att den senast ändrade filen ligger på index 0[cite: 2]
+        if (total_files_found > 0) {
+            qsort(file_list, total_files_found, sizeof(FileEntry), compare_file_entries);
+        }
+    }
+}
+
+
+static void show_file_in_status_bar(UDOUBLE target_addr) {
+    if (total_files_found == 0) return;
+
+    char status_text[300];
+    snprintf(status_text, sizeof(status_text), "Öppna: %s", file_list[current_file_index].filename);
+    render_status_bar(status_text, target_addr);
+}
+
+static void show_next_file(UDOUBLE target_addr) {
+    if (total_files_found == 0) return;
+
+    // Stega framåt i listan, börja om på 0 om vi når slutet
+    current_file_index++;
+    if (current_file_index >= total_files_found) {
+        current_file_index = 0;
+    }
+
+    // Uppdatera statusraden med den nya filen
+    show_file_in_status_bar(target_addr);
 }
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
@@ -320,10 +386,20 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_F3) {
-                previous_file_index = current_file_index;
-                show_file_in_status_bar();
-                show_next_file(); // Visar nästa fil i statusraden[cite: 2]
-                current_state = STATE_FILE_SWITCH;
+                // 1. Skanna mappen för att få en färsk lista
+                scan_directory_for_files();
+
+                if (total_files_found > 0) {
+                    previous_file_index = 0; // Om vi ångrar oss vill vi tillbaka till filen vi var i
+
+                    // Om vi redan befinner oss i en fil, hoppa till NÄSTA fil i listan direkt
+                    if (strlen(current_filename) > 0) {
+                        current_file_index = 1 % total_files_found;
+                    }
+
+                    show_file_in_status_bar(target_addr);
+                    current_state = STATE_FILE_SWITCH;
+                }
             }
             else if (key_code == KEY_F4) {
                 // 1. Spara nuvarande fil säkert innan vi rensar[cite: 1]
