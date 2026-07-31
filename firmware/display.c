@@ -20,7 +20,7 @@ int point_x[ABSOLUTE_MAX_COLS];
 int point_y[ABSOLUTE_MAX_ROWS];
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
-static UBYTE pre_flipped_glyphs[128][2048];
+static UBYTE pre_flipped_glyphs[256][2048];
 
 LineSpacing current_spacing_mode = SPACING_ONE_AND_HALF;
 
