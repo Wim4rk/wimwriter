@@ -92,6 +92,15 @@ static void generate_default_filename(void){
     filename_len = strlen(current_filename);
 }
 
+// Hjälpfunktion för qsort (Sorterar nyast först)
+static int compare_file_entries(const void *a, const void *b) {
+    FileEntry *entry_a = (FileEntry *)a;
+    FileEntry *entry_b = (FileEntry *)b;
+    if (entry_a->last_modified < entry_b->last_modified) return 1;
+    if (entry_a->last_modified > entry_b->last_modified) return -1;
+    return 0;
+}
+
 static void scan_directory_for_files(void) {
     DIR *d;
     struct dirent *dir;
@@ -469,37 +478,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
                 process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
-            }
-            break;
-
-        case STATE_NAMING_FILE:
-            if (c > 0) {
-                if (c == '\n') { // Enter
-                    // Vi sparar inget än, vi stänger bara rutan
-                    hide_status_bar_and_redraw(target_addr);
-                    current_state = STATE_EDITING;
-                }
-                else if (c == 127) { // Backspace
-                    if (is_suggested_name) {
-                        clear_filename_buffer();
-                        is_suggested_name = false;
-                    } else {
-                        remove_last_char_from_filename();
-                    }
-                    update_status_bar_visuals(target_addr);
-                }
-                else { // Du skriver ett nytt tecken
-                    if (is_suggested_name) {
-                        clear_filename_buffer();
-                        is_suggested_name = false;
-                    }
-                    append_char_to_filename(c);
-                    update_status_bar_visuals(target_addr);
-                }
-            }
-            else if (key_code == KEY_ESC) {
-                hide_status_bar_and_redraw(target_addr);
-                current_state = STATE_EDITING;
             }
             break;
 
