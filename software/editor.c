@@ -160,8 +160,16 @@ static void show_next_file(UDOUBLE target_addr) {
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
-    // Om det är Ctrl + Backspace vill vi inte köra standard-model_delete här
+    unsigned char uc = (unsigned char)c; // 1. Lägg till denna!
+
     bool is_ctrl_bs = (c == 127 && keyboard_is_ctrl_pressed());
+
+    if (!is_ctrl_bs) {
+        if (c == 127) model_delete_char();
+        // 2. Uppdatera denna rad:
+        else if (uc >= 32 || c == '\n') model_insert_char(c);
+        append_to_temp_file(c);
+    }
 
     // 1. Logik för Datamodellen (RAM)
     if (!is_ctrl_bs) {
@@ -175,9 +183,6 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
         if (*cursor_col > pending_start_col) {
             (*cursor_col)--;
             BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
-
-            // Radera från den underliggande datamodellen
-            model_delete_char();
         }
 
         editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
@@ -281,10 +286,9 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             clear_area(px_back, py_back, current_font.width, current_font.height, target_addr);
             break;
         default: // Vanliga tecken
-            if (c > 0 && c >= 32 && c <= 126) {
-
+            // Uppdatera if-satsen här så den släpper igenom svenska tecken
+            if (uc >= 32) {
                 BUF_AT(text_buffer, *cursor_row, *cursor_col) = c;
-
                 // STANDARDLÄGET: Ingen kö finns, och ingen ny tangent väntar i evdev-loopen
                 if (pending_start_col == -1 && !more_keys_waiting) {
                     // Rendera tecknet omedelbart ("skrivmaskinsläget")

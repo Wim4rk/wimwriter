@@ -208,7 +208,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
         for (int c = 0; c < current_max_cols; c++) {
             char ch = BUF_AT(buffer, r, c);
             if (ch >= 32 && ch <= 256 && ch != ' ') {
-                const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
+                const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)ch];
                 int char_px = get_physical_x(c);
                 int char_py_abs = get_physical_y(r);
                 int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
@@ -335,7 +335,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
         char c = text[i];
 
         // Hämta endast tecken vi kan skriva ut
-        if (c >= 32 && c <= 126) {
+        if ((unsigned char)c >= 32) {
             const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 
             // Kopiera in den roterade glyfen i vår statusbuffert
