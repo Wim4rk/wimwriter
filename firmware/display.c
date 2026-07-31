@@ -333,11 +333,11 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     int physical_x = SCREEN_WIDTH - current_font.width;
 
     for (int i = 0; text[i] != '\0' && physical_x >= 0; i++) {
-        char c = text[i];
+        unsigned char uc = (unsigned char)text[i];
 
         // Hämta endast tecken vi kan skriva ut
-        if ((unsigned char)c >= 32) {
-            const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
+        if (uc >= 32) {
+            const UBYTE *glyph = pre_flipped_glyphs[uc];
 
             // Kopiera in den roterade glyfen i vår statusbuffert
             for (int h = 0; h < current_font.height; h++) {
