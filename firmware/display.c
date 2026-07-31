@@ -102,7 +102,7 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
     // Filtrera bort icke-utskrivbara tecken för att spara cykler
     if (c < 32 || c > 126) return;
-    send_and_display_buffer(pre_flipped_glyphs[(int)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(pre_flipped_glyphs[(unsigned char)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 // Funktionen bygger font-cachen i RAM.
@@ -208,7 +208,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
         for (int c = 0; c < current_max_cols; c++) {
             char ch = BUF_AT(buffer, r, c);
             if (ch >= 32 && ch <= 256 && ch != ' ') {
-                const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
+                const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
                 int char_px = get_physical_x(c);
                 int char_py_abs = get_physical_y(r);
                 int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
@@ -303,7 +303,7 @@ void render_stitched_text(const char *text, int physical_x, int physical_y, UDOU
         char c = text[i];
         if (c < 32 || c > 126) c = ' ';
 
-        const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+        const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 
         for (int h = 0; h < current_font.height; h++) {
             memcpy(&stitch_buffer[h * text_pixel_width + current_local_x],
@@ -336,7 +336,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
 
         // Hämta endast tecken vi kan skriva ut
         if (c >= 32 && c <= 126) {
-            const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+            const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 
             // Kopiera in den roterade glyfen i vår statusbuffert
             for (int h = 0; h < current_font.height; h++) {
@@ -369,7 +369,7 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         int px = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * current_font.width);
         int py = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * current_font.height);
 
-        const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+        const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 
         // Blockkopiera glyphen till skärmbufferten
         for (int h = 0; h < current_font.height; h++) {

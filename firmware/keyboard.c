@@ -7,9 +7,21 @@
 static bool shift_pressed = false;
 static bool caps_locked = false;
 static bool ctrl_pressed = false;
+static bool altgr_pressed = false;
 
-// Mappning för standardtangenter (Svensk fysisk layout -> 7-bit ASCII)
-// Observera: 'å' = '}', 'ä' = '{', 'ö' = '|' i din 7-bitars standard
+// Mappning för AltGr (Svensk fysisk layout)
+static const char map_altgr[128] = {
+    [KEY_2] = '@',
+    [KEY_4] = '$',
+    [KEY_7] = '{',
+    [KEY_8] = '[',
+    [KEY_9] = ']',
+    [KEY_0] = '}',
+    [KEY_MINUS] = '\\', // Ofta knappen till höger om 0 (frågetecken/plus/backslash)
+    [KEY_RIGHTBRACE] = '~' // Ofta knappen till höger om Å (diaeresis/timsglas/tilde)
+};
+
+// Mappning för standardtangenter (gemener)
 static const char map_default[128] = {
     [KEY_A] = 'a', [KEY_B] = 'b', [KEY_C] = 'c', [KEY_D] = 'd', [KEY_E] = 'e',
     [KEY_F] = 'f', [KEY_G] = 'g', [KEY_H] = 'h', [KEY_I] = 'i', [KEY_J] = 'j',
@@ -19,15 +31,14 @@ static const char map_default[128] = {
     [KEY_Z] = 'z',
     [KEY_1] = '1', [KEY_2] = '2', [KEY_3] = '3', [KEY_4] = '4', [KEY_5] = '5',
     [KEY_6] = '6', [KEY_7] = '7', [KEY_8] = '8', [KEY_9] = '9', [KEY_0] = '0',
-    [KEY_SPACE] = ' ', [KEY_ENTER] = '\n', [KEY_BACKSPACE] = 127, // 127 är Delete
-    [KEY_LEFTBRACE] = '}',  // å
-    [KEY_APOSTROPHE] = '{', // ä
-    [KEY_SEMICOLON] = '|',  // ö
+    [KEY_SPACE] = ' ', [KEY_ENTER] = '\n', [KEY_BACKSPACE] = 127,
+    [KEY_LEFTBRACE] = 0xE5,  // å (229)
+    [KEY_APOSTROPHE] = 0xE4, // ä (228)
+    [KEY_SEMICOLON] = 0xF6,  // ö (246)
     [KEY_MINUS] = '+', [KEY_SLASH] = '-', [KEY_COMMA] = ',', [KEY_DOT] = '.'
 };
 
-// Mappning för Shift/Caps Lock (Svensk fysisk layout -> 7-bit ASCII)
-// 'Å' = ']', 'Ä' = '[', 'Ö' = '\'
+// Mappning för Shift/Caps Lock (versaler)
 static const char map_shift[128] = {
     [KEY_A] = 'A', [KEY_B] = 'B', [KEY_C] = 'C', [KEY_D] = 'D', [KEY_E] = 'E',
     [KEY_F] = 'F', [KEY_G] = 'G', [KEY_H] = 'H', [KEY_I] = 'I', [KEY_J] = 'J',
@@ -38,9 +49,9 @@ static const char map_shift[128] = {
     [KEY_1] = '!', [KEY_2] = '"', [KEY_3] = '#', [KEY_4] = '$', [KEY_5] = '%',
     [KEY_6] = '&', [KEY_7] = '/', [KEY_8] = '(', [KEY_9] = ')', [KEY_0] = '=',
     [KEY_SPACE] = ' ', [KEY_ENTER] = '\n', [KEY_BACKSPACE] = 127,
-    [KEY_LEFTBRACE] = ']',  // Å
-    [KEY_APOSTROPHE] = '[', // Ä
-    [KEY_SEMICOLON] = '\\', // Ö
+    [KEY_LEFTBRACE] = 0xC5,  // Å (197)
+    [KEY_APOSTROPHE] = 0xC4, // Ä (196)
+    [KEY_SEMICOLON] = 0xD6,  // Ö (214)
     [KEY_MINUS] = '?', [KEY_SLASH] = '_', [KEY_COMMA] = ';', [KEY_DOT] = ':'
 };
 
@@ -84,21 +95,28 @@ char keyboard_get_char(struct input_event *ev) {
         return 0;
     }
 
+    // Hantera AltGr (KEY_RIGHTALT är standard för höger Alt)
+    if (ev->code == KEY_RIGHTALT) {
+        altgr_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+
     // Returnera bara tecken vid Key Press (1) eller Key Repeat (2)
     if (ev->value == 1 || ev->value == 2) {
         if (ev->code < 128) {
             char default_char = map_default[ev->code];
 
-            // Kontrollera om det är en bokstav (a-z eller å, ä, ö)[cite: 1]
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
-                               default_char == '{' || default_char == '}' || default_char == '|';
+                                default_char == (char)0xE5 || default_char == (char)0xE4 || default_char == (char)0xF6;
 
             bool use_shift = shift_pressed;
             if (caps_locked && is_letter) {
                 use_shift = !use_shift;
             }
 
-            if (use_shift) {
+            if (altgr_pressed && map_altgr[ev->code] != 0) {
+                return map_altgr[ev->code];
+            } else if (use_shift) {
                 return map_shift[ev->code];
             } else {
                 return default_char;
