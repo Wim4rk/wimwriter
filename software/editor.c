@@ -444,7 +444,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
         case STATE_FILE_SWITCH:
             if (key_code == KEY_F3) {
-                show_next_file();
+                show_next_file(target_addr);
             }
             else if (key_code == KEY_ESC) {
                 current_file_index = previous_file_index;
