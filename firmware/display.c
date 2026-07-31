@@ -286,27 +286,41 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
-    // 1. Rensa ytan. Visuell botten är fysisk topp.
-    // Vi raderar från x=0, y=0 och fyller ut hela bredden samt höjden på 68 px[cite: 1].
-    clear_area(0, 0, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+    int physical_w = SCREEN_WIDTH;
+    int physical_h = MARGIN_BOTTOM; // 68 pixlar enligt din layout
+    int physical_y = 0; // Fysiskt högst upp på skärmen
 
-    // 2. Fysisk Y-koordinat för texten.
-    // Eftersom texten är 64 px hög och ytan 68 px[cite: 1], placeras texten
-    // fysiskt kloss an mot Y = 0. De resterande 4 pixlarna bildar automatiskt
-    // en tom marginal uppåt (vilket blir din skiljelinje nedåt visuellt).
-    int physical_y = 0;
+    // Statisk buffert för hela statusraden (1448 x 68 pixlar)
+    // Undviker malloc och skonar processorn
+    static UBYTE status_buffer[SCREEN_WIDTH * MARGIN_BOTTOM];
 
-    // 3. Fysisk X-koordinat börjar i högerkant (din visuella vänsterkant).
-    // Vi backar en teckenbredd för att få plats med det allra första tecknet.
+    // Fyll hela ytan med vitt. Detta ersätter behovet av clear_area()
+    memset(status_buffer, 0xFF, sizeof(status_buffer));
+
+    // Fysisk X-koordinat börjar i högerkant (din visuella vänsterkant)
     int physical_x = SCREEN_WIDTH - current_font.width;
 
-    // Låt texten löpa hela vägen tills strängen är slut eller skärmkanten nås.
     for (int i = 0; text[i] != '\0' && physical_x >= 0; i++) {
-        render_char(text[i], physical_x, physical_y, target_addr);
+        char c = text[i];
 
-        // Stega fysiskt åt vänster (vilket bygger texten visuellt åt höger)
+        // Hämta endast tecken vi kan skriva ut
+        if (c >= 32 && c <= 126) {
+            const UBYTE *glyph = pre_flipped_glyphs[(int)c];
+
+            // Kopiera in den roterade glyfen i vår statusbuffert
+            for (int h = 0; h < current_font.height; h++) {
+                memcpy(&status_buffer[h * physical_w + physical_x],
+                       &glyph[h * current_font.width],
+                       current_font.width);
+            }
+        }
+
+        // Stega fysiskt åt vänster för nästa tecken
         physical_x -= current_font.width;
     }
+
+    // Ett enda massivt SPI-anrop till IT8951 för hela statusraden
+    send_and_display_buffer(status_buffer, 0, physical_y, physical_w, physical_h, target_addr, IT8951_A2_MODE);
 }
 
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {

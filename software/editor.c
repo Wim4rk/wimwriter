@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "editor.h"
 #include "file_io.h"
 #include "../firmware/keyboard.h"
@@ -8,7 +9,7 @@
 
 EditorState current_state = STATE_EDITING;
 
-#define RENDER_THRESHOLD 10
+#define RENDER_THRESHOLD 8
 
 // Variabler för filhantering
 static bool is_suggested_name = false;
@@ -27,9 +28,9 @@ static void show_file_in_status_bar(void) {}
 static void show_next_file(void) {}
 static void force_full_redraw(void) {}
 
-static void save_to_sd(const char *filename, char *text_buffer, UDOUBLE target_addr) {
-    // Anropar funktionen i file_io.c
-    save_buffer_to_file(filename, text_buffer, current_max_rows, current_max_cols);
+static void save_to_sd(const char *filename, UDOUBLE target_addr) {
+    // Anropar funktionen som läser från RAM-modellen
+    save_document_to_file(filename);
 
     // Visuell bekräftelse i statusraden
     char status_text[300];
@@ -74,7 +75,7 @@ static void clear_filename_buffer(void) {
 static void generate_default_filename(void){
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    snprintf(current_filename, sizeof(current_filename), "wimwriter - %04d-%02d-%02d_%02d%02d.txt",
+    snprintf(current_filename, sizeof(current_filename), "wim - %04d-%02d-%02d_%02d_%02d.txt",
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
     filename_len = strlen(current_filename);
 }
@@ -86,12 +87,8 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
 
     // 1. Logik för Datamodellen (RAM)
     if (!is_ctrl_bs) {
-        if (c == 127) {
-            model_delete_char();
-        } else if ((c >= 32 && c <= 126) || c == '\n') {
-            model_insert_char(c);
-        }
-        // Kontinuerlig lagring till SD-kort
+        if (c == 127) model_delete_char();
+        else if ((c >= 32 && c <= 126) || c == '\n') model_insert_char(c);
         append_to_temp_file(c);
     }
 
@@ -105,6 +102,8 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             model_delete_char();
         }
 
+        editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
         // 2. Om raderingen tömde hela kön, nollställ flaggan
         if (*cursor_col == pending_start_col) {
             pending_start_col = -1;
@@ -117,11 +116,13 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
 
     switch (c) {
         case '\n': // Enter
+            editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
             *cursor_col = 0;
             (*cursor_row)++;
             break;
 
         case 127: // Backspace
+            editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
             if (keyboard_is_ctrl_pressed()) {
                 int start_col = *cursor_col;
 
@@ -201,54 +202,41 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
 
             clear_area(px_back, py_back, current_font.width, current_font.height, target_addr);
             break;
-
         default: // Vanliga tecken
             if (c > 0 && c >= 32 && c <= 126) {
 
                 BUF_AT(text_buffer, *cursor_row, *cursor_col) = c;
 
-                // STANDARDLÄGET: Ingen kö finns, och ingen ny tangent väntar
+                // STANDARDLÄGET: Ingen kö finns, och ingen ny tangent väntar i evdev-loopen
                 if (pending_start_col == -1 && !more_keys_waiting) {
-                    // Rendera omedelbart
+                    // Rendera tecknet omedelbart ("skrivmaskinsläget")
                     int px = get_physical_x(*cursor_col);
                     int py = get_physical_y(*cursor_row);
                     render_char(c, px, py, target_addr);
 
                     (*cursor_col)++;
                 }
-                // CATCH-UP: Maskinen ligger efter
+                // CATCH-UP: Maskinen ligger efter (fler tangenter väntar, eller en kö pågår redan)
                 else {
-                    // Markera startpunkt
+                    // Markera startpunkt för kön (om det är första tecknet som buffras)
                     if (pending_start_col == -1) {
                         pending_start_col = *cursor_col;
                     }
 
                     (*cursor_col)++;
+                    int queue_len = *cursor_col - pending_start_col;
 
-                    // Om detta var sista tecknet i kön, skjut ut hela strängen direkt
-                    if (!more_keys_waiting) {
-                        int len = *cursor_col - pending_start_col;
-                        char temp_str[len + 1];
-                        for (int i = 0; i < len; i++) {
-                            temp_str[i] = BUF_AT(text_buffer, *cursor_row, pending_start_col + i);
-                        }
-                        temp_str[len] = '\0';
-
-                        int px = get_physical_x(pending_start_col);
-                        int py = get_physical_y(*cursor_row);
-                        render_stitched_text(temp_str, px, py, target_addr);
-
-                        // Kön kan nollställas
-                        pending_start_col = -1;
+                    // Bryt kön och spola om vi når gränsen, trycker mellanslag, ELLER om inga fler tangenter väntar
+                    if (queue_len >= RENDER_THRESHOLD || c == ' ' || !more_keys_waiting) {
+                        editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
                     }
                 }
 
                 // Hantera automatisk radbrytning
-                // Kolla om det är här som jag får en för tidig radbrytning?
                 if (*cursor_col >= current_max_cols) {
+                    // Spola ut eventuella tecken innan vi bryter raden
+                    editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
-                    // Om raden bryts nollställer vi kön
-                    pending_start_col = -1;
                 }
             }
             break;
@@ -258,6 +246,27 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
     if (*cursor_row >= current_max_rows) {
         display_jump(text_buffer, cursor_row, cursor_col, target_addr);
     }
+}
+
+void editor_flush_queue(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr) {
+    if (pending_start_col != -1 && cursor_col > pending_start_col) {
+        int len = cursor_col - pending_start_col;
+        char temp_str[len + 1];
+
+        for (int i = 0; i < len; i++) {
+            temp_str[i] = BUF_AT(text_buffer, cursor_row, pending_start_col + i);
+        }
+        temp_str[len] = '\0';
+
+        int px = get_physical_x(pending_start_col);
+        int py = get_physical_y(cursor_row);
+
+        // Ett enda SPI-anrop för hela kön
+        render_stitched_text(temp_str, px, py, target_addr);
+    }
+
+    // Nollställ kön
+    pending_start_col = -1;
 }
 
 // ==========================================
@@ -285,7 +294,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     update_status_bar_visuals(target_addr);
                     current_state = STATE_NAMING_FILE;
                 } else {
-                    save_to_sd(current_filename, text_buffer, target_addr);
+                    save_to_sd(current_filename, target_addr);
                 }
             }
             else if (key_code == KEY_F3) {
@@ -358,6 +367,57 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             else if (key_code == KEY_ESC) {
                 hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
+            }
+            break;
+
+        case STATE_NAMING_FILE:
+            if (c > 0) {
+                if (c == '\n') {
+                    if(access(current_filename, F_OK) == 0) {
+                        char warning_text[300];
+                        snprintf(warning_text, sizeof(warning_text), "Skriv över fil: '%s'?", current_filename);
+                        render_status_bar(warning_text, target_addr);
+                        current_state = STATE_CONFIRM_OVERWRITE;
+                    } else {
+                        save_to_sd(current_filename, target_addr);
+                        hide_status_bar_and_redraw(target_addr);
+                        current_state = STATE_EDITING;
+                    }
+                }
+                else if (c == 127) {
+                    if (is_suggested_name) {
+                        clear_filename_buffer();
+                        is_suggested_name = false;
+                    } else {
+                        remove_last_char_from_filename();
+                    }
+                    update_status_bar_visuals(target_addr);
+                }
+                else {
+                    if (is_suggested_name) {
+                        clear_filename_buffer();
+                        is_suggested_name = false;
+                    }
+                    append_char_to_filename(c);
+                    update_status_bar_visuals(target_addr);
+                }
+            }
+            else if (key_code == KEY_ESC) {
+                hide_status_bar_and_redraw(target_addr);
+                current_state = STATE_EDITING;
+            }
+            break;
+        case STATE_CONFIRM_OVERWRITE:
+            if (c == 'j' || c == 'J') {
+                // Skriv över filen
+                save_to_sd(current_filename, target_addr);
+                hide_status_bar_and_redraw(target_addr);
+                current_state = STATE_EDITING;
+            }
+            else if (c == 'n' || c == 'N') {
+                // Avbryt överskrivning och återgå till namnredigering
+                update_status_bar_visuals(target_addr);
+                current_state = STATE_NAMING_FILE;
             }
             break;
 

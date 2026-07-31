@@ -1,7 +1,8 @@
 #include "file_io.h"
-#include "../firmware/display.h"
 #include <stdio.h>
 #include <string.h>
+#include "../firmware/display.h"
+#include "model.h"
 
 static FILE *temp_file = NULL;
 
@@ -36,35 +37,55 @@ void append_to_temp_file(char c) {
     }
 }
 
-void save_buffer_to_file(const char *filename, const char *buffer, int max_rows, int max_cols) {
+// void save_buffer_to_file(const char *filename, const char *buffer, int max_rows, int max_cols) {
+//     FILE *file = fopen(filename, "w");
+//     if (file == NULL) {
+//         return; // Här kan felhantering/statusmeddelande läggas till
+//     }
+
+//     // Iterera över bufferten och skriv till fil
+//     for (int r = 0; r < max_rows; r++) {
+//         int last_char_in_row = -1;
+
+//         // Hitta var raden slutar för att slippa spara onödiga mellanslag
+//         for (int c = max_cols - 1; c >= 0; c--) {
+//             char ch = buffer[(r * max_cols) + c];
+//             if (ch != ' ' && ch != '\0') {
+//                 last_char_in_row = c;
+//                 break;
+//             }
+//         }
+
+//         // Skriv radens tecken
+//         for (int c = 0; c <= last_char_in_row; c++) {
+//             char ch = buffer[(r * max_cols) + c];
+//             if (ch >= 32 && ch <= 126) {
+//                 fputc(ch, file);
+//             }
+//         }
+
+//         // Lägg till radbrytning om det finns data, eller om det är en medveten tom rad
+//         fputc('\n', file);
+//     }
+
+    fclose(file);
+}
+
+void save_document_to_file(const char *filename) {
     FILE *file = fopen(filename, "w");
     if (file == NULL) {
-        return; // Här kan felhantering/statusmeddelande läggas till
+        return; // Felhantering för filåtkomst kan adderas här
     }
 
-    // Iterera över bufferten och skriv till fil
-    for (int r = 0; r < max_rows; r++) {
-        int last_char_in_row = -1;
+    int doc_length = model_get_text_length();
 
-        // Hitta var raden slutar för att slippa spara onödiga mellanslag
-        for (int c = max_cols - 1; c >= 0; c--) {
-            char ch = buffer[(r * max_cols) + c];
-            if (ch != ' ' && ch != '\0') {
-                last_char_in_row = c;
-                break;
-            }
+    for (int i = 0; i < doc_length; i++) {
+        char ch = model_char_at(i);
+
+        // Skriv endast giltiga tecken samt radbrytningar
+        if ((ch >= 32 && ch <= 126) || ch == '\n') {
+            fputc(ch, file);
         }
-
-        // Skriv radens tecken
-        for (int c = 0; c <= last_char_in_row; c++) {
-            char ch = buffer[(r * max_cols) + c];
-            if (ch >= 32 && ch <= 126) {
-                fputc(ch, file);
-            }
-        }
-
-        // Lägg till radbrytning om det finns data, eller om det är en medveten tom rad
-        fputc('\n', file);
     }
 
     fclose(file);

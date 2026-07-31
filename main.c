@@ -69,16 +69,21 @@ int main() {
 
     struct input_event ev;
     bool prompt_visible = false;
-    int prompt_px = 0, prompt_py = 0;
-    int prompt_timeout_ms = 800;
+    int epoll_timeout_ms = 300; // Kort timeout för catch-up
+    int prompt_delay_ticks = 3; // 3 * 300 ms = 900 ms inaktivitet innan prompt
+    int current_idle_ticks = 0;
 
     // Main loop - CPU rests in read() until interrupt from keyboard
     while (1) {
-        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, prompt_timeout_ms);
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, epoll_timeout_ms);
 
         if (nfds == 0) {
             // TIMEOUT: inaktivitet har passerat
-            if (!prompt_visible) {
+            // Spola kön!
+            editor_flush_queue(text_buffer, cursor_row, cursor_col, target_addr);
+
+            current_idle_ticks++;
+            if (current_idle_ticks >= prompt_delay_ticks && !prompt_visible) {
                 prompt_px = get_physical_x(cursor_col);
                 prompt_py = get_physical_y(cursor_row);
 
@@ -89,6 +94,7 @@ int main() {
                 // TODO: Eventuellt trigga spolning till temp-fil här
             }
         } else if (nfds > 0) {
+            current_idle_ticks = 0;
             for (int n = 0; n < nfds; n++) {
                 if (events[n].data.fd == kb_fd) {
                     // Läs tömmer bufferten tills EAGAIN returneras
