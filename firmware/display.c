@@ -209,9 +209,9 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
             char ch = BUF_AT(buffer, r, c);
             if (ch >= 32 && ch <= 256 && ch != ' ') {
                 const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
-                int char_px = SCREEN_WIDTH - MARGIN_LEFT - ((c + 1) * current_font.width);
                 int char_px = get_physical_x(c);
                 int char_py_abs = get_physical_y(r);
+                int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
                 // Kopiera in glyfen i lokala bufferten
                 for (int h = 0; h < current_font.height; h++) {
                     memcpy(&row_buffer[(rel_y + h) * physical_w + char_px],
