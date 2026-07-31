@@ -390,7 +390,7 @@ void set_active_font(int font_choice) {
         current_font.height = FONT_24X32_H;
         current_font.bytes_per_char = FONT_24X32_BYTES;
     }else {
-        current_font.data = (const uint8_t*)wim_font_24x41;
+        current_font.data = (const uint8_t*)wim_font_24x43;
         current_font.width = FONT_24X43_W;
         current_font.height = FONT_24X43_H;
         current_font.bytes_per_char = FONT_24X43_BYTES;
