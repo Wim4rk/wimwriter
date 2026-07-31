@@ -385,20 +385,15 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
 // Funktion för att byta font dynamiskt via F6 eller vid uppstart
 void set_active_font(int font_choice) {
     if (font_choice == 1) {
-        current_font.data = (const uint8_t*)wim_font_16x28;
-        current_font.width = FONT_16X28_W;
-        current_font.height = FONT_16X28_H;
-        current_font.bytes_per_char = FONT_16X28_BYTES;
-    } else if (font_choice == 2) {
         current_font.data = (const uint8_t*)wim_font_24x32;
         current_font.width = FONT_24X32_W;
         current_font.height = FONT_24X32_H;
         current_font.bytes_per_char = FONT_24X32_BYTES;
     }else {
         current_font.data = (const uint8_t*)wim_font_24x41;
-        current_font.width = FONT_24X41_W;
-        current_font.height = FONT_24X41_H;
-        current_font.bytes_per_char = FONT_24X41_BYTES;
+        current_font.width = FONT_24X43_W;
+        current_font.height = FONT_24X43_H;
+        current_font.bytes_per_char = FONT_24X43_BYTES;
     }
 
     // Så fort fonten ändras, måste vi ladda om den spegelvända cachen
