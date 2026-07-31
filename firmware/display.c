@@ -200,7 +200,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
     for (int r = start_row; r <= end_row; r++) {
         for (int c = 0; c < current_max_cols; c++) {
             char ch = BUF_AT(buffer, r, c);
-            if (ch >= 32 && ch <= 126 && ch != ' ') {
+            if (ch >= 32 && ch <= 256 && ch != ' ') {
                 const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
                 int char_px = SCREEN_WIDTH - MARGIN_LEFT - ((c + 1) * current_font.width);
                 int char_py_abs = SCREEN_HEIGHT - MARGIN_TOP - ((r + 1) * current_font.height);
