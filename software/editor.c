@@ -19,6 +19,9 @@ static int current_file_index = 0;
 static int pending_start_col = -1;
 static int filename_len = 0;
 
+static char previous_filename[256] = "";
+static bool just_created_new_file = false;
+
 // ==========================================
 // PLATSHÅLLARE (STUBS) - Fylls i senare
 // ==========================================
@@ -283,6 +286,25 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
     switch (current_state) {
 
         case STATE_EDITING:
+            if (key_code == KEY_ESC && just_created_new_file) {
+                // Återgå till föregående fil[cite: 2]
+                strncpy(current_filename, previous_filename, sizeof(current_filename));
+                filename_len = strlen(current_filename);
+
+                // Vi gör ett temporärt anrop till din platshållare.
+                // Denna kommer fyllas med riktig logik i nästa steg.
+                load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+                just_created_new_file = false;
+                hide_status_bar_and_redraw(target_addr);
+                break;
+            }
+
+            // Om du börjar skriva (vilket som helst tecken förutom Esc), avbryts ångra-läget
+            if (c > 0 && just_created_new_file) {
+                just_created_new_file = false;
+                hide_status_bar_and_redraw(target_addr);
+            }
+
             if (key_code == KEY_F1) {
                 show_help_box();
                 current_state = STATE_HELP;
@@ -304,7 +326,30 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_FILE_SWITCH;
             }
             else if (key_code == KEY_F4) {
-                // TODO: Ny fil
+                // 1. Spara nuvarande fil säkert innan vi rensar[cite: 1]
+                if (strlen(current_filename) > 0) {
+                    save_document_to_file(current_filename);
+                    // Spara undan namnet så vi kan ångra oss med Esc[cite: 2]
+                    strncpy(previous_filename, current_filename, sizeof(previous_filename));
+                }
+
+                // 2. Töm den underliggande datamodellen
+                model_init();
+
+                // 3. Rensa skärmbufferten och återställ markören
+                memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
+                *cursor_row = JUMP_LINES;
+                *cursor_col = 0;
+
+                // 4. Nollställ det aktuella filnamnet och flagga för "ångra"-möjligheten
+                clear_filename_buffer();
+                just_created_new_file = true;
+
+                // 5. Rita upp den tomma skärmen (Rensar det gamla dokumentet fysiskt)
+                stitch_and_render_screen(text_buffer, target_addr);
+
+                // 6. Informera användaren i statusraden[cite: 2]
+                render_status_bar("Ny fil. (Tryck Esc för att återgå)", target_addr);
             }
             else {
                 // Standard textinmatning skickas till redigeringsmotorn
