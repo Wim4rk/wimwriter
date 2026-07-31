@@ -22,6 +22,24 @@ int point_y[ABSOLUTE_MAX_ROWS];
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[128][2048];
 
+LineSpacing current_spacing_mode = SPACING_ONE_AND_HALF;
+
+// Beräknar hur många extra pixlar som ska läggas till per rad
+int get_line_spacing_px(void) {
+    switch (current_spacing_mode) {
+        case SPACING_ONE_AND_HALF: return current_font.height / 2;
+        case SPACING_DOUBLE: return current_font.height;
+        case SPACING_SINGLE:
+        default: return 0;
+    }
+}
+
+// Gör det möjligt att byta radavstånd "on the fly" (t.ex. via en framtida funktionstangent)
+void set_line_spacing(LineSpacing mode) {
+    current_spacing_mode = mode;
+    calculate_layout_points(current_font.width, current_font.height);
+}
+
 // Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
 void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr) {
     IT8951_Load_Img_Info load_info;
@@ -157,10 +175,9 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
 
     int num_rows = end_row - start_row + 1;
     int physical_w = SCREEN_WIDTH;
-    int physical_h = num_rows * current_font.height;
-
-    // Fysisk Y-koordinat för den översta visuella radens överkant (som rent fysiskt är längst ner pga rotationen)
-    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * current_font.height);
+    int spacing_px = get_line_spacing_px();
+    int physical_h = num_rows * (current_font.height + spacing_px);
+    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (current_font.height + spacing_px)) + spacing_px;
 
     // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
     static UBYTE row_buffer[1448 * 128];
@@ -369,15 +386,18 @@ void set_active_font(int font_choice) {
     init_glyph_cache();
 }
 
-// Körs en gång när en font laddas in via F6 eller uppstart
 void calculate_layout_points(int font_w, int font_h) {
+    int spacing_px = get_line_spacing_px();
+
     current_max_cols = (SCREEN_WIDTH - MARGIN_LEFT - MARGIN_RIGHT) / font_w;
-    current_max_rows = (SCREEN_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM) / font_h;
+
+    // Beräkna max antal rader med radavståndet inkluderat, baserat på dina marginaler[cite: 2]
+    current_max_rows = (SCREEN_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM) / (font_h + spacing_px);
 
     for (int col = 0; col < current_max_cols; col++) {
         point_x[col] = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * font_w);
     }
     for (int row = 0; row < current_max_rows; row++) {
-        point_y[row] = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * font_h);
+        point_y[row] = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * (font_h + spacing_px)) + spacing_px;
     }
 }

@@ -53,6 +53,20 @@ extern int current_max_rows;
 extern uint8_t full_screen_buffer[];
 
 // ---------------------------------------------------------
+// Radavstånd (Line Spacing)
+// ---------------------------------------------------------
+typedef enum {
+    SPACING_SINGLE,
+    SPACING_ONE_AND_HALF,
+    SPACING_DOUBLE
+} LineSpacing;
+
+extern LineSpacing current_spacing_mode;
+
+void set_line_spacing(LineSpacing mode);
+int get_line_spacing_px(void);
+
+// ---------------------------------------------------------
 // Initiering och grundläggande skärmstyrning
 // ---------------------------------------------------------
 void init_display(UDOUBLE *target_addr);
