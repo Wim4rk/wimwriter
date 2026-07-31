@@ -150,22 +150,34 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // Räkna ut hur mycket minne som utgör de rader vi vill behålla
-    int keep_chars = JUMP_LINES * current_max_cols;
+    // 1. Antalet rader vi ska bevara (från botten av den nuvarande texten)
+    int keep_rows = JUMP_LINES;
+    if (keep_rows > current_max_rows) {
+        keep_rows = current_max_rows;
+    }
+
+    int keep_chars = keep_rows * current_max_cols;
     int total_chars = current_max_rows * current_max_cols;
 
-    // 1. Flytta de nedersta raderna (JUMP_LINES) till toppen av skärmen i RAM
-    memmove(buffer, buffer + (total_chars - keep_chars), keep_chars);
+    // 2. Räkna ut varifrån i bufferten vi ska kopiera de sista raderna
+    int source_offset = (current_max_rows - keep_rows) * current_max_cols;
 
-    // 2. Töm resten av skärmytan (allt efter de rader vi precis flyttade upp)
+    // 3. Flytta de sista raderna till toppen av bufferten (rad 0)
+    memmove(buffer, buffer + source_offset, keep_chars);
+
+    // 4. Rensa resten av skärmen från gammal text
     memset(buffer + keep_chars, ' ', total_chars - keep_chars);
 
-    // 3. Sätt skrivprompten på raden direkt under den sparade texten
-    *cursor_row = JUMP_LINES;
+    // 5. Sätt skrivprompten på den första tomma raden precis under den bevarade texten
+    *cursor_row = keep_rows;
 
-    // 4. Uppdatera hela skärmen
+    // (OBS: *cursor_col nollställs inte här, eftersom word_wrap kan
+    // ha placerat början på ett nytt ord där innan hoppet triggades)
+
+    // 6. Rita upp den nya, rena skärmen
     stitch_and_render_screen(buffer, target_addr);
 }
+
 
 // Ny hjälpfunktion: Renderar en eller flera hela rader i ett enda anrop
 void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE target_addr) {
@@ -180,8 +192,9 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
     int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (current_font.height + spacing_px)) + spacing_px;
 
     // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
-    static UBYTE row_buffer[1448 * 128];
-    memset(row_buffer, 0xFF, physical_w * physical_h); // Fyll hela ytan med vitt (raderar därmed allt gammalt)
+    // Bounding box för raderna (dimensionerad för max höjd inklusive extremt radavstånd = 1448 x 384 px i RAM)
+    static UBYTE row_buffer[1448 * 384];
+    memset(row_buffer, 0xFF, physical_w * physical_h); // Fyll hela ytan med vitt
 
     // Rita in alla faktiska tecken från textbufferten in i denna nya vita låda
     for (int r = start_row; r <= end_row; r++) {
