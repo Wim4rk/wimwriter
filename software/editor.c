@@ -451,10 +451,22 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
             }
-            else if (c > 0) {
+            else if (c == '\n') {
+                // Användaren trycker Enter för att välja filen i statusraden
                 hide_status_bar_and_redraw(target_addr);
-                // TODO: load_file_into_buffer(...)
-                force_full_redraw();
+
+                // Kopiera in det valda namnet från listan
+                strncpy(current_filename, file_list[current_file_index].filename, sizeof(current_filename));
+                filename_len = strlen(current_filename);
+
+                // Ladda in filen från SD-kortet till RAM och skärm[cite: 2]
+                load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+
+                current_state = STATE_EDITING;
+            }
+            else if (c > 0) {
+                // Omvänd logik: Användaren ångrar filbytet genom att bara börja skriva
+                hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
                 process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
             }
