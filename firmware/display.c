@@ -300,11 +300,10 @@ void render_stitched_text(const char *text, int physical_x, int physical_y, UDOU
     int current_local_x = text_pixel_width - current_font.width;
 
     for (int i = 0; i < len; i++) {
-        char c = text[i];
-        if (c < 32 || c > 126) c = ' ';
+        unsigned char uc = (unsigned char)text[i];
+        if (uc < 32) uc = ' '; // Rensa bara bort styrtecken
 
-        const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
-
+        const UBYTE *glyph = pre_flipped_glyphs[uc];
         for (int h = 0; h < current_font.height; h++) {
             memcpy(&stitch_buffer[h * text_pixel_width + current_local_x],
                    &glyph[h * current_font.width],

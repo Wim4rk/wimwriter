@@ -67,7 +67,6 @@ int main() {
 
     printf("WimWriter redo!\n");
 
-    struct input_event ev;
     bool prompt_visible = false;
     int prompt_px = 0, prompt_py = 0;
     int epoll_timeout_ms = 300; // Kort timeout för catch-up
