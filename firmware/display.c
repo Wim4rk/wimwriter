@@ -150,31 +150,38 @@ int get_physical_y(int row) {
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Antalet rader vi ska bevara (från botten av den nuvarande texten)
+    // 1. Antalet rader vi ska ha kvar som kontext högst upp[cite: 2]
     int keep_rows = JUMP_LINES;
-    if (keep_rows > current_max_rows) {
-        keep_rows = current_max_rows;
+
+    // 2. Beräkna exakt hur många rader hela textblocket måste skiftas uppåt
+    // för att markören (den aktiva raden) ska hamna på index 'keep_rows'.
+    int shift_up = *cursor_row - keep_rows;
+
+    if (shift_up <= 0) {
+        return; // Inget hopp behövs, vi är inte i botten än
     }
 
-    int keep_chars = keep_rows * current_max_cols;
-    int total_chars = current_max_rows * current_max_cols;
+    // 3. Antal rader som måste följa med i hoppet.
+    // (+1 krävs för att plocka med själva markörraden, eftersom den
+    // dolda raden kan innehålla det överflyttade ordet från word_wrap).
+    int rows_to_copy = keep_rows + 1;
 
-    // 2. Räkna ut varifrån i bufferten vi ska kopiera de sista raderna
-    int source_offset = (current_max_rows - keep_rows) * current_max_cols;
+    int chars_to_copy = rows_to_copy * current_max_cols;
+    int source_offset = shift_up * current_max_cols;
 
-    // 3. Flytta de sista raderna till toppen av bufferten (rad 0)
-    memmove(buffer, buffer + source_offset, keep_chars);
+    // 4. Skifta upp de bevarade raderna (inklusive det nedbrutna ordet) till toppen
+    memmove(buffer, buffer + source_offset, chars_to_copy);
 
-    // 4. Rensa resten av skärmen från gammal text
-    memset(buffer + keep_chars, ' ', total_chars - keep_chars);
+    // 5. Rensa all text nedanför (inklusive den dolda raden som orsakade hoppet)
+    int total_buffer_size = (current_max_rows + 2) * current_max_cols;
+    memset(buffer + chars_to_copy, ' ', total_buffer_size - chars_to_copy);
 
-    // 5. Sätt skrivprompten på den första tomma raden precis under den bevarade texten
+    // 6. Sätt markören på den nya raden, precis under den bevarade texten[cite: 2]
+    // (Vi rör inte *cursor_col, eftersom det just nu brutna ordet står där)
     *cursor_row = keep_rows;
 
-    // (OBS: *cursor_col nollställs inte här, eftersom word_wrap kan
-    // ha placerat början på ett nytt ord där innan hoppet triggades)
-
-    // 6. Rita upp den nya, rena skärmen
+    // 7. Rita upp den nya skärmen. Eftersom vi använder A2-läge för allt annat
+    // gör vi hela skärmuppdateringen asynkront och blixtsnabbt.
     stitch_and_render_screen(buffer, target_addr);
 }
 
@@ -203,9 +210,8 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
             if (ch >= 32 && ch <= 256 && ch != ' ') {
                 const UBYTE *glyph = pre_flipped_glyphs[(int)ch];
                 int char_px = SCREEN_WIDTH - MARGIN_LEFT - ((c + 1) * current_font.width);
-                int char_py_abs = SCREEN_HEIGHT - MARGIN_TOP - ((r + 1) * current_font.height);
-                int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
-
+                int char_px = get_physical_x(c);
+                int char_py_abs = get_physical_y(r);
                 // Kopiera in glyfen i lokala bufferten
                 for (int h = 0; h < current_font.height; h++) {
                     memcpy(&row_buffer[(rel_y + h) * physical_w + char_px],
@@ -272,7 +278,7 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     }
 }
 
-void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr) {
+void render_stitched_text(const char *text, int physical_x, int physical_y, UDOUBLE target_addr) {
     int len = 0;
     while (text[len] != '\0') {
         len++;
@@ -282,20 +288,16 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
 
     int text_pixel_width = len * current_font.width;
 
-    // 1. Översätt visuella koordinater till fysiska (180 graders rotation)
-    int physical_x = SCREEN_WIDTH - visual_x - text_pixel_width;
-    int physical_y = SCREEN_HEIGHT - visual_y - current_font.height;
+    // Eftersom physical_x är startpunkten för det FÖRSTA tecknet (visuellt längst till vänster,
+    // vilket är fysiskt längst till höger pga rotation), är lådans lägsta fysiska X-koordinat:
+    int box_physical_x = physical_x - text_pixel_width + current_font.width;
 
-    // 2. RAM-buffert för exakt den textsträng som ska ritas.
-    // Deklareras statiskt för att undvika minnesallokering på stacken (skonar ARMv6).
-    // Dimensionerad för en full rad (1448 px) med högst 64 px typsnittshöjd.
+    // Statisk RAM-buffert för att skona ARMv6
     static UBYTE stitch_buffer[1448 * 64];
-
-    // Rensa endast den del av bufferten vi faktiskt kommer att använda
     memset(stitch_buffer, 0xFF, text_pixel_width * current_font.height);
 
-    // 3. Pussla in glyferna baklänges i bufferten för att motverka rotationen
-    int current_x = text_pixel_width - current_font.width;
+    // Det första tecknet placeras högst upp i lokala X-koordinater inuti bufferten
+    int current_local_x = text_pixel_width - current_font.width;
 
     for (int i = 0; i < len; i++) {
         char c = text[i];
@@ -304,15 +306,14 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
         const UBYTE *glyph = pre_flipped_glyphs[(int)c];
 
         for (int h = 0; h < current_font.height; h++) {
-            int dest_offset = (h * text_pixel_width) + current_x;
-            memcpy(&stitch_buffer[dest_offset],
+            memcpy(&stitch_buffer[h * text_pixel_width + current_local_x],
                    &glyph[h * current_font.width],
                    current_font.width);
         }
-        current_x -= current_font.width;
+        current_local_x -= current_font.width; // Stega fysiskt åt vänster för nästa tecken
     }
 
-    send_and_display_buffer(stitch_buffer, physical_x, physical_y, text_pixel_width, current_font.height, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(stitch_buffer, box_physical_x, physical_y, text_pixel_width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
