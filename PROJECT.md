@@ -2,23 +2,13 @@
 
 ---
 
-## Prioriterade action points - Att göra
-
-* Om jag skriver för fort när skärmen gör stora uppdateringar så renderas inte allt det jag skriver. Jag vill att det ska buffras upp och hinna ikapp. Måhända kan bufferten stitchas så att hela texten renderas på en gång?
-* Hur kan latensen förbättras? Just nu är maskinen på gränsen till användbar. Minsta förbättring skulle göra den ruskigt bra.
-- Försök genomförs just nu att skicka mindre teckenyta och istället sprida ut tecknen med mer avstånd mellan dem.
-* Specialtecken. Vilka tecken har jag tillgång till? Ett bra filformat att kunna skriva är Markdown. Då krävs att ett antal specialtecken kan användas.
-* Bokstäver med shift har strulat lite. Undersök och förbättra.
-
----
-
 ## Projektetspecifikationer
 
 ### 1. Prioriteringar (Kärnfokus)
 
 För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
 
-1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet (upp till 80 ord i minuten / ~6.7 tecken per sekund).
+1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet.
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
 3. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
 4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas.
@@ -27,7 +17,7 @@ För att projektet ska vara intressant och framgångsrikt måste vi kompromissl�
 
 ### 2. Hårdvarukonfiguration
 
-Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att använda de delar jag redan äger och att maximera drifttiden:
+Efter utvärdering har vi spikat följande hårdvaruuppsättning, med fokus på att maximera drifttiden:
 
 * **Processor:** Raspberry Pi Zero W (v1). Vald framför Zero 2 W eftersom den har en extremt låg strömförbrukning (ARMv6-arkitektur).
 * **Skärm:** 6-tums e-bläcksskärm HD ansluten via en dedikerad *IT8951 Driver HAT*, som i sin tur pratar med din Pi via *SPI*. 
@@ -83,7 +73,6 @@ Gränssnittet skall vara minimalt. I stort sett bara textytan. Piltangenterna sk
 
 ## Framtida förbättringar
 
-* **Fontstorlekar:** Vi kan lägga till fler fontstorlekar före att ge användaren mer flexibilitet. En mindre font kan potentiellt förbättra latensen. Försök har genomförts med en hälften så hög font, men det är för litet för ögat. Helst ska våra marginaler förbli desamma, men det är inget krav. Statusraden blir ju lägre... Det torde dock inte vara ett problem att ha flera fontstorlekar i RAM.
 * **Integrerat tangentbord:** Vi kan lägga till ett integrerat tangentbord som inte kräver en separat USB-anslutning. Detta skulle öka batteritiden.
 
 ---
@@ -102,4 +91,4 @@ Gränssnittet skall vara minimalt. I stort sett bara textytan. Piltangenterna sk
 ---
 *Projektet upprättad 2026-07-20.*
 
-*Senaste uppdateringen 2026-07-28*
+*Senaste uppdateringen 2026-07-31*

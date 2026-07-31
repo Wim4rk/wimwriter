@@ -1,24 +1,38 @@
 ## Latens
 
-Latensen är för hög. Jag kan enkelt skriva ifrån prompten.
-* **Catch-up:** Om more_keys_waiting är sant. Eller om epoll_wait indikerar fler inkommande händelser så har en kö uppstått. Där behöver vi en catch-up-mekanik. Till att börja med skall hela kön renderas så fort en naturlig paus (300ms?) har passerat. Ord för ord ska renderas så fort ett mellanslag eller retur/enter har angetts. Vid backspace avbryts kön och renderas. Om inte heller det räcker till behöver vi buffra mer aggressivt: var 8:e tecken, oavsett vad som skrivs in, ska en rendering ske.
-* **Drop-out**: Jag tappar emellanåt tecken när jag skriver fort samtidigt som en jump-manöver genomförs.
-* **Reparationer:** Vid ett uppehåll (timeout) kan vi stämma av skillnaden mellan skärmen och skrivbufferten. Om det behövs kan vi uppdatera skrivytan.
+Vi börjar nå dit vi ska. Vi ska göra en branch i git och testa att se vad som händer när jag hårdkodar variabler kring typer och radavstånd?
 
-Nästa steg blir alltså att bygga färdigt filhaneringen och skapa en text-buffert.
+Det finns tre tunga tekniska argument för att skrota F6 och hårdkoda layouten nu när du har hittat rätt, särskilt med tanke på dina krav för maskinen.
+* Kritisk latensvinst (ARMv6-optimering): Din Pi Zero W använder en ARMv6-processor. Denna arkitektur saknar hårdvarustöd för division. När teckenbredd och radavstånd är dynamiska variabler tvingas processorn utföra mjukvarubaserad multiplikation och division varje gång en koordinat ska räknas ut, vilket kostar värdefulla CPU-cykler. Om du hårdkodar dimensionerna som konstanter (t.ex. #define FONT_W 32) kan C-kompilatorn optimera bort matten och ersätta den med extremt snabba bit-shift-operationer. Detta är en direkt vinst för ditt mål att eliminera all tänkbar latens under snabbt skrivande.
+* Optimerat minnesavtryck: Möjligheten att byta font via F6 implementerades primärt för att du skulle kunna testa olika fonter. Om du låser fast en specifik storlek kan vi radera de andra font-arrayerna ur källkoden. Det minskar binärens storlek drastiskt, minskar inläsningstiden vid uppstart och frigör RAM som kan användas för att hantera längre textdokument.
+* Förenklad "State"-hantering: Enligt dina specifikationer ska maskinen spara den aktiva fonten till minnet när en ändring sker via F6. Genom att hårdkoda layouten kan vi helt stryka denna logik. Maskinen behöver inte längre läsa in eller spara teckenstorlek vid uppstart och nedstängning, vilket innebär färre I/O-operationer mot SD-kortet och därmed en lägre risk för fördröjningar och korrupt data.
 
-3. Blockerande SPI-anrop och Latens Ditt främsta mål är lägsta möjliga latens och att klara skurar på upp till 80 ord i minuten.  Problemet: I editor.c skickas textinmatning direkt till render_char, som i sin tur anropar send_and_display_buffer. Varje sådant anrop initierar en fullständig SPI-transaktion (sätta minnesadress, skicka preamble, vänta på busy-flagga, överföra block, trigga skärmuppdatering). Att göra detta per tecken blockerar huvudloopen från att läsa nästa tangenttryckning snabbt nog. Lösning: Din "catch-up"-logik för tecken i kö är utmärkt, men systemet hinner sannolikt inte ens bygga en kö om varje tecken skickas synkront över SPI. Du bör frikoppla evdev-läsningen från skärmuppdateringen. Låt tangentbordet skriva till bufferten i en tråd (eller via icke-blockerande I/O där renderingen sker periodiskt i batchar) så att tangentnedtryckningar aldrig får vänta på att en SPI-överföring ska bli klar.
-4. Dubbla skärmuppdateringar vid Word WrapRadbrytning ska hanteras sömlöst i A2-läget.  Problemet: Funktionen word_wrap i display.c anropar först clear_area (för att ta bort ordet som inte fick plats). clear_area triggar en direkt skärmuppdatering i A2-läge. Därefter flyttas ordet till nästa rad i RAM och ritas ut, vilket triggar ytterligare en A2-uppdatering.Konsekvens: E-bläckskärmen kommer att blinka (ghosting) två gånger extremt snabbt på två olika platser, vilket upplevs som lagg.Lösning: Skicka både den vita raderingsrutan och det nya ordet till IT8951-minnet i tystnad, och trigga därefter utritningen (EPD_IT8951_Display_Area) en enda gång över en bounding box som täcker båda förändringarna.5. Kollisionsrisk vid filinläsningNär en fil öppnas ska den lämna ett visst antal tomma rader längst ner, definierat av JUMP_LINES.  Problemet: Koden i file_io.c är inte anpassad för filer som är längre än vad skärmen rymmer (vilket styrs av variabeln current_max_rows). Om filen fyller hela din ABSOLUTE_MAX_ROWS-yta, kommer din rutin sätta markören på rad 50. Eftersom din renderingsmotor endast ritar ut de översta 15 raderna, kommer markören att befinna sig utanför skärmen och redigeringen kraschar visuellt.  Lösning: Vid inladdning av ett existerande dokument måste bufferten pagineras. Programmet måste stega fram till slutet av filen, läsa in de sista raderna så att de fyller skärmen från toppen, och sedan placera markören på current_max_rows - JUMP_LINES.
+Här är en översikt över exakt vad som krävs för att låsa fast layouten. Genom att göra detta kan kompilatorn byta ut tunga divisioner mot extremt snabba operationer, vilket direkt gynnar ditt mål att uppnå lägsta möjliga latens på din ARMv6-processor.
+1. Radera funktionalitet i editor.c (Logik och State)
+2. Ta bort F6: Radera lyssnaren för F6 i din inmatningsloop, vars enda syfte just nu är att växla teckenstorlek.
+3. Stryk State-hanteringen för fonten: Maskinen ska spara den aktiva fonten vid filbyte eller avstängning. All logik för att läsa in och spara detta värde till SD-kortet kan nu raderas, vilket sparar I/O-cykler. 
+4. Uppdatera display.h (Från variabler till konstanter)Radera datastrukturen ActiveFont, variabeln current_font, samt din LineSpacing-enum helt och hållet.Ersätt dem med statiska makron. Med ett typsnitt på 24x43 pixlar och 1,5 i radavstånd (+21 pixlar) blir din totala radhöjd 64 pixlar. Hårdkoda detta tillsammans med dina fasta marginaler på 44 pixlar (topp) och 68 pixlar (botten, höger, vänster).  Med hårdkodade konstanter kommer kompilatorn att förberäkna skärmytan till exakt 54 kolumner och 15 rader redan innan programmet körs.
+5. Förenkla display.c (Renderingsmotorn)Ta bort funktionerna set_active_font(), set_line_spacing() och calculate_layout_points().Skriv om init_glyph_cache() så att den läser direkt från arrayen wim_font_24x43 vid uppstart istället för att gå via en pekarstruktur.  Byt ut alla förekomster av current_font.width och liknande dynamiska variabler inuti renderingsfunktionerna till dina nya statiska makron.
+6. Rensa projektkatalogen och MakefileRadera filerna för 16x28, 24x32 och andra överblivna fonter från din /fonts-katalog.Ta bort kompilering och länkning av dessa från din Makefile för att minska binärens storlek och frigöra RAM-minne.
 
-1. När vi nu så smångingom börjar titta på minne så kommer vi fånga upp vad tangentbordet faktiskt skriver i en modell och använda skärmen enbart som en vy. Skärmen ska inte påverka texten, men texten ska påverka skärmen. 
+## Filhantering
 
-3. I första hand ska wimwriter bete sig som en skrivmaskin - dvs varje tangettryckning resulterar i en bokstav på skärmen. Catch-up-mekaniken används vid större skärmuppdateringar (jump) då skärmen annars missar min inmatning under den tid det tar att rendera vyn. Stitching har dock visat sig effektiv då den i någon mån kringgår SPI-flaskhalsen. 
-6. **Word-wrap** Stitcha skärmen så att radering och rendering på den nya raden sker i samma manöver.
+Jag lyckades uppdatera lite textfiler idag, men det betedde sig inte som förväntat. "Spara som" sparade bara filen, inte innehållet. När jag sparade därefter sparades varje tecken två gånger: "HHaarr  jjaagg  iinnggeett  ssppaarraatt  hhrr..  DDeett  rr  iinnttee  bbrraa.." Där finns inga svenska tecken heller.
 
-7. **Backspace** 
-- Enkel Backspace: Att rendera ett mellanslag är en resurssnål lösning. Programmet kan göra en snabb kopiering av mellanslagets befintliga bitmapp från RAM-minnet och skicka endast denna lilla ruta över SPI. IT8951-kontrollern tar emot datan i A2-läget och vänder enbart de nödvändiga pixlarna till vitt.
-- Ctrl + Backspace: Att använda clear_area här är en mycket god idé. Eftersom du raderar ett helt ord, minskar du antalet SPI-transaktioner avsevärt genom att definiera en större "damage box" och skicka ett gemensamt sjok av vit data. Det besparar processorn från att loopa igenom och skicka över flera separata mellanslag, vilket stödjer målet om att behålla låg latens.
-- Ctrl + Backspace över rad: Det fungerar inte att hoppa över rader.
+Debugga och bygg vidare. Spara dokument på ett logiskt ställe. ~/Dokument/writer kanske?
 
-8. **Rad-avstånd** Radavståndet är för litet. 
-9. **Tappar tecken vid jump** Hinner liksom fylla en buffert och så renderas inte de senaste tecknen. Det verkar som att de finns där, och jag får vit yta, men de renderar inte.
+## Höger shift
+
+Bokstäver med shift har strulat lite. Undersök och förbättra.
+
+## Backspace och radrytning
+
+Ctrl + Backspace över radbrytning: Det fungerar inte att hoppa över rader. Vanlig backspace fungerar som förväntat.
+
+## Renderings-reparationer
+
+Vid ett uppehåll (timeout) kan vi stämma av skillnaden mellan skärmen och skrivbufferten. Om det behövs kan vi uppdatera skrivytan.
+
+Om inte annat kan det vara dags att tita på hur vi gör för att snygga till sidan. Läsa in hela skärmen igen, och uppdatera med GC16 till att börja med. INIT(0) når jag genom F5.
+
+*Dokumentet uppdaterat 2026-07-31*
