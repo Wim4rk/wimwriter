@@ -18,7 +18,7 @@
  * Arrayerna instansieras sedan i wim_fonts.h för att laddas direkt i RAM
  * vid uppstart av maskinen.
  */
-extern const uint8_t wim_font_24x43[256][FONT_24X32_BYTES];
-extern const uint8_t wim_font_24x32[256][FONT_24X43_BYTES];
+extern const uint8_t wim_font_24x32[256][FONT_24X32_BYTES];
+extern const uint8_t wim_font_24x43[256][FONT_24X43_BYTES];
 
 #endif // WIM_FONTS_H
