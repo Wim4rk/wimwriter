@@ -26,9 +26,8 @@ INCLUDES = -I./firmware \
 
 # Alla C-källkodsfiler
 SRCS = main.c \
-       fonts/wim_font_16x28.c \
        fonts/wim_font_24x32.c \
-       fonts/wim_font_24x41.c \
+       fonts/wim_font_24x43.c \
        firmware/display.c \
        firmware/fast_spi.c \
        firmware/keyboard.c \
