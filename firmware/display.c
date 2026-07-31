@@ -366,8 +366,8 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         int col = i % current_max_cols;
 
         // Beräkna inverterade koordinater för fysisk rotation direkt
-        int px = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * current_font.width);
-        int py = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * current_font.height);
+        int px = get_physical_x(col);
+        int py = get_physical_y(row);
 
         const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 

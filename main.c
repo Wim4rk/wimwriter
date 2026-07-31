@@ -99,18 +99,26 @@ int main() {
             for (int n = 0; n < nfds; n++) {
                 if (events[n].data.fd == kb_fd) {
                     // Läs tömmer bufferten tills EAGAIN returneras
-                    while (read(kb_fd, &ev, sizeof(ev)) > 0) {
-                        if (ev.type == EV_KEY) {
+                    // Läs in alla väntande events i en stöt
+                    struct input_event ev_queue[64];
+                    int ev_count = 0;
 
-                            // Städa bort prompten
-                            if (prompt_visible) {
-                                render_char(' ', prompt_px, prompt_py, target_addr);
-                                prompt_visible = false;
-                            }
-
-                            bool more_keys_waiting = false;
-                            handle_input(&ev, target_addr, text_buffer, &cursor_row, &cursor_col, more_keys_waiting);
+                    while (read(kb_fd, &ev_queue[ev_count], sizeof(struct input_event)) > 0) {
+                        if (ev_queue[ev_count].type == EV_KEY) {
+                            ev_count++;
+                            if (ev_count >= 64) break; // Säkerhet mot overflow
                         }
+                    }
+
+                    // Processa dem och låt motorn veta om fler tangenter väntar
+                    for (int i = 0; i < ev_count; i++) {
+                        if (prompt_visible) {
+                            render_char(' ', prompt_px, prompt_py, target_addr);
+                            prompt_visible = false;
+                        }
+
+                        bool more_keys = (i < ev_count - 1); // True för alla utom sista
+                        handle_input(&ev_queue[i], target_addr, text_buffer, &cursor_row, &cursor_col, more_keys);
                     }
                 }
             }
