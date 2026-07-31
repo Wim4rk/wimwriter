@@ -388,7 +388,12 @@ void set_active_font(int font_choice) {
         current_font.width = FONT_16X28_W;
         current_font.height = FONT_16X28_H;
         current_font.bytes_per_char = FONT_16X28_BYTES;
-    } else {
+    } else if (font_choice == 2) {
+        current_font.data = (const uint8_t*)wim_font_24x32;
+        current_font.width = FONT_24X32_W;
+        current_font.height = FONT_24X32_H;
+        current_font.bytes_per_char = FONT_24X32_BYTES;
+    }else {
         current_font.data = (const uint8_t*)wim_font_24x41;
         current_font.width = FONT_24X41_W;
         current_font.height = FONT_24X41_H;

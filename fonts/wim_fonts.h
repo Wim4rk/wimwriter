@@ -8,6 +8,10 @@
 #define FONT_16X28_H 28
 #define FONT_16X28_BYTES 448
 
+#define FONT_24X32_W 24
+#define FONT_24X32_H 32
+#define FONT_24X32_BYTES 768
+
 #define FONT_24X41_W 24
 #define FONT_24X41_H 41
 #define FONT_24X41_BYTES 984
@@ -18,6 +22,7 @@
  * vid uppstart av maskinen.
  */
 extern const uint8_t wim_font_16x28[128][FONT_16X28_BYTES];
+extern const uint8_t wim_font_24x32[128][FONT_24X32_BYTES];
 extern const uint8_t wim_font_24x41[128][FONT_24X41_BYTES];
 
 #endif // WIM_FONTS_H

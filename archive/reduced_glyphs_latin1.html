@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <title>Svensk Latin-1 Typsnittsgenerator (Kompakt SPI-överföring)</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; background: #f9f9f9; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .row { display: flex; gap: 10px; }
+        .col { flex: 1; }
+        button { background: #28a745; color: white; border: none; padding: 12px 20px; margin-top: 25px; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #218838; }
+        .preview-box { margin-top: 25px; padding: 15px; background: #f0f0f0; border-radius: 6px; border: 1px dashed #bbb; text-align: center; }
+        .preview-title { font-weight: bold; margin-bottom: 10px; display: block; }
+        canvas { border: 1px solid #ff0000; background: #fff; margin: 0 10px; image-rendering: pixelated; }
+        .note { font-size: 0.85em; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Wimwriter Font Generator (Kompakt Damage Box)</h2>
+    <p>Detta verktyg kan användas för att skapa en minimal "bounding box" som skickas över SPI, medan logiken i C-koden hanterar padding/mellanrum.</p>
+
+    <label for="fontStyle">Typsnitt:</label>
+    <select id="fontStyle" onchange="updatePreview()">
+        <option value="'Prestige Elite', 'Prestige Elite Std', monospace" selected>Prestige Elite</option>
+        <option value="'Courier New', Courier, monospace">Courier New</option>
+        <option value="monospace">Standard Monospace</option>
+    </select>
+
+    <div class="row">
+        <div class="col">
+            <label for="boxW">Rutans bredd (W):</label>
+            <input type="number" id="boxW" value="16" oninput="updatePreview()">
+        </div>
+        <div class="col">
+            <label for="boxH">Rutans höjd (H):</label>
+            <input type="number" id="boxH" value="32" oninput="updatePreview()">
+        </div>
+    </div>
+    <div class="note">Detta är den exakta datamängd som skickas över SPI per tecken. Den röda ramen i förhandsgranskningen visar rutan.</div>
+
+    <label for="fontSize">Typsnittsstorlek (pixlar):</label>
+    <input type="number" id="fontSize" value="26" oninput="updatePreview()">
+
+    <div class="row">
+        <div class="col">
+            <label for="xOffset">X-offset (sidled):</label>
+            <input type="number" id="xOffset" value="0" oninput="updatePreview()">
+        </div>
+        <div class="col">
+            <label for="yOffset">Y-offset (baslinje):</label>
+            <input type="number" id="yOffset" value="26" oninput="updatePreview()">
+        </div>
+    </div>
+
+    <label for="format">Utdataformat:</label>
+    <select id="format">
+        <option value="c">C-Headerfil (.h) - Källkod</option>
+        <option value="bin">Rå binärfil (.bin)</option>
+    </select>
+
+    <div class="preview-box">
+        <span class="preview-title">Realtidsgranskning</span>
+        <div id="canvasContainer">
+            <canvas id="previewCanvas1"></canvas>
+            <canvas id="previewCanvas2"></canvas>
+            <canvas id="previewCanvas3"></canvas>
+        </div>
+        <small style="color: #666; display: block; margin-top: 10px;">Visar 'W' (bredast), 'Å' (högst), 'g' (lägst)</small>
+    </div>
+
+    <button onclick="generateFont()">Generera typsnitt</button>
+</div>
+
+<script>
+    // Uppdaterad till Latin-1 (ISO-8859-1)
+    const SWEDISH_LATIN1_MAP = {
+        0xC4: 'Ä', 0xD6: 'Ö', 0xC5: 'Å', 0xDC: 'Ü',
+        0xE4: 'ä', 0xF6: 'ö', 0xE5: 'å', 0xFC: 'ü'
+    };
+
+    function drawCharToCanvas(canvasId, charStr) {
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext('2d');
+
+        const fontName = document.getElementById('fontStyle').value;
+        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+        const xOffset = parseInt(document.getElementById('xOffset').value, 10);
+        const yOffset = parseInt(document.getElementById('yOffset').value, 10);
+        const w = parseInt(document.getElementById('boxW').value, 10);
+        const h = parseInt(document.getElementById('boxH').value, 10);
+
+        canvas.width = w;
+        canvas.height = h;
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.fillStyle = "#000000";
+        ctx.font = `${fontSize}px ${fontName}`;
+        ctx.fillText(charStr, xOffset, yOffset);
+    }
+
+    function updatePreview() {
+        drawCharToCanvas('previewCanvas1', 'W');
+        drawCharToCanvas('previewCanvas2', 'Å');
+        drawCharToCanvas('previewCanvas3', 'g');
+    }
+
+    function generateFont() {
+        const fontName = document.getElementById('fontStyle').value;
+        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+        const xOffset = parseInt(document.getElementById('xOffset').value, 10);
+        const yOffset = parseInt(document.getElementById('yOffset').value, 10);
+        const w = parseInt(document.getElementById('boxW').value, 10);
+        const h = parseInt(document.getElementById('boxH').value, 10);
+        const outputFormat = document.getElementById('format').value;
+
+        // Utökat till hela Latin-1-registret
+        const totalChars = 256;
+        const totalBytes = totalChars * w * h;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const rawBytes = new Uint8Array(totalBytes);
+        let byteIdx = 0;
+
+        let cCode = `#ifndef WIM_FONT_${w}X${h}_H\n#define WIM_FONT_${w}X${h}_H\n\n#include <stdint.h>\n\n`;
+        cCode += `// Genererad med dimensionerna W:${w} H:${h}\n`;
+        cCode += `const uint8_t wim_font_${w}x${h}[256][${w * h}] = {\n`;
+
+        for (let i = 0; i < totalChars; i++) {
+            let charToDraw = " ";
+
+            if (SWEDISH_LATIN1_MAP[i]) {
+                charToDraw = SWEDISH_LATIN1_MAP[i];
+            } else if (i >= 32 && i < 127) {
+                charToDraw = String.fromCharCode(i);
+            }
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = "#000000";
+            ctx.font = `${fontSize}px ${fontName}`;
+            ctx.fillText(charToDraw, xOffset, yOffset);
+
+            const imgData = ctx.getImageData(0, 0, w, h).data;
+            let charBytes = [];
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    const brightness = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
+                    const val = (brightness < 128) ? 0x00 : 0xFF;
+
+                    rawBytes[byteIdx++] = val;
+                    if (outputFormat === 'c') {
+                        charBytes.push("0x" + val.toString(16).toUpperCase().padStart(2, '0'));
+                    }
+                }
+            }
+
+            if (outputFormat === 'c') {
+                const cleanChar = (i >= 32 && i < 127) ? charToDraw : (SWEDISH_LATIN1_MAP[i] ? SWEDISH_LATIN1_MAP[i] : ' ');
+                cCode += `    // Index 0x${i.toString(16).toUpperCase().padStart(2, '0')} ('${cleanChar}')\n    {\n        `;
+                for (let b = 0; b < charBytes.length; b++) {
+                    cCode += charBytes[b] + (b === charBytes.length - 1 ? "" : ", ");
+                    if ((b + 1) % 12 === 0 && b !== charBytes.length - 1) {
+                        cCode += "\n        ";
+                    }
+                }
+                cCode += "\n    },\n";
+            }
+        }
+
+        let blob, filename;
+        if (outputFormat === 'bin') {
+            blob = new Blob([rawBytes], { type: "application/octet-stream" });
+            filename = `wim_font_${w}x${h}.bin`;
+        } else {
+            cCode += "};\n\n#endif\n";
+            blob = new Blob([cCode], { type: "text/plain;charset=utf-8" });
+            filename = `wim_font_${w}x${h}.h`;
+        }
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+
+    window.onload = updatePreview;
+</script>
+
+</body>
+</html>
