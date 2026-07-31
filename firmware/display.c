@@ -102,6 +102,9 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
 void render_char(char c, int x, int y, UDOUBLE target_addr) {
     // Släpp igenom svenska tecken, men blockera styrtecken under 32
     if ((unsigned char)c < 32) return;
+
+    // Den här raden försvann och måste tillbaka!
+    send_and_display_buffer(pre_flipped_glyphs[(unsigned char)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
 }
 
 // Funktionen bygger font-cachen i RAM.
