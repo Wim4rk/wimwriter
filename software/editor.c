@@ -120,7 +120,7 @@ static void scan_directory_for_files(void) {
 
                     // Hämta ändringsdatum
                     if (stat(dir->d_name, &file_stat) == 0) {
-                        strncpy(file_list[total_files_found].filename, dir->d_name, 255);
+                        snprintf(file_list[total_files_found].filename, sizeof(file_list[total_files_found].filename), "%s", dir->d_name);
                         file_list[total_files_found].last_modified = file_stat.st_mtime;
                         total_files_found++;
                     }
@@ -141,7 +141,7 @@ static void show_file_in_status_bar(UDOUBLE target_addr) {
     if (total_files_found == 0) return;
 
     char status_text[300];
-    snprintf(status_text, sizeof(status_text), "Öppna: %s", file_list[current_file_index].filename);
+    snprintf(status_text, sizeof(status_text), "Öppna: %.255s", file_list[current_file_index].filename);
     render_status_bar(status_text, target_addr);
 }
 
@@ -465,7 +465,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 hide_status_bar_and_redraw(target_addr);
 
                 // Kopiera in det valda namnet från listan
-                strncpy(current_filename, file_list[current_file_index].filename, sizeof(current_filename));
+                snprintf(current_filename, sizeof(current_filename), "%s", file_list[current_file_index].filename);
                 filename_len = strlen(current_filename);
 
                 // Ladda in filen från SD-kortet till RAM och skärm[cite: 2]
@@ -480,6 +480,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
             }
             break;
+
 
         case STATE_NAMING_FILE:
             if (c > 0) {
