@@ -22,7 +22,7 @@
 #define MARGIN_BOTTOM 68
 
 // Parameter för hur många rader som bevaras vid Jump
-#define JUMP_LINES 2
+#define JUMP_LINES 3
 
 // ---------------------------------------------------------
 // Hårdkodad Layout (Latensoptimering för ARMv6)
@@ -48,32 +48,8 @@
 #define ABSOLUTE_MAX_COLS 120
 #define ABSOLUTE_MAX_ROWS 60
 
-// Dynamiska variabler (räknas ut och sätts i display.c vid fontbyte)
-// Våra förberedda punkter (Lookup Tables)
-extern int point_x[ABSOLUTE_MAX_COLS];
-extern int point_y[ABSOLUTE_MAX_ROWS];
-
-// Variabler för gränser
-extern int current_max_cols;
-extern int current_max_rows;
-
-
 // Den statiska bildbufferten i RAM för helskärmsuppdateringar
 extern uint8_t full_screen_buffer[];
-
-// ---------------------------------------------------------
-// Radavstånd (Line Spacing)
-// ---------------------------------------------------------
-typedef enum {
-    SPACING_SINGLE,
-    SPACING_ONE_AND_HALF,
-    SPACING_DOUBLE
-} LineSpacing;
-
-extern LineSpacing current_spacing_mode;
-
-void set_line_spacing(LineSpacing mode);
-int get_line_spacing_px(void);
 
 // ---------------------------------------------------------
 // Initiering och grundläggande skärmstyrning
@@ -85,7 +61,6 @@ void refresh_display_full(void); // Kör INIT (Mode 0) via F5
 // ---------------------------------------------------------
 // Renderingsfunktioner (SPI-överföring till IT8951)
 // ---------------------------------------------------------
-void set_active_font(int font_choice);
 void render_char(char c, int physical_x, int physical_y, UDOUBLE target_addr);
 void clear_area(int physical_x, int physical_y, int width, int height, UDOUBLE target_addr);
 void render_status_bar(const char *text, UDOUBLE target_addr);
@@ -105,9 +80,7 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr);
 void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr);
 
-void calculate_layout_points(int font_w, int font_h);
-
 // Makro för att räkna ut rätt index i RAM
-#define BUF_AT(buf, r, c) buf[((r) * current_max_cols) + (c)]
+#define BUF_AT(buf, r, c) buf[((r) * MAX_COLS) + (c)]
 
 #endif // DISPLAY_H

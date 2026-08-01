@@ -6,39 +6,14 @@
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
 
-ActiveFont current_font;
-
 extern void EPD_IT8951_ReadBusy(void);
 
 char view_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 void init_glyph_cache(void);
 uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
-int current_max_cols = 0;
-int current_max_rows = 0;
-int point_x[ABSOLUTE_MAX_COLS];
-int point_y[ABSOLUTE_MAX_ROWS];
-
 // Cache för färdigvända tecken - spara beräkning under skrivning
 static UBYTE pre_flipped_glyphs[256][2048];
-
-LineSpacing current_spacing_mode = SPACING_ONE_AND_HALF;
-
-// Beräknar hur många extra pixlar som ska läggas till per rad
-int get_line_spacing_px(void) {
-    switch (current_spacing_mode) {
-        case SPACING_ONE_AND_HALF: return FONT_H / 2;
-        case SPACING_DOUBLE: return FONT_H;
-        case SPACING_SINGLE:
-        default: return 0;
-    }
-}
-
-// Gör det möjligt att byta radavstånd "on the fly" (t.ex. via en framtida funktionstangent)
-void set_line_spacing(LineSpacing mode) {
-    current_spacing_mode = mode;
-    calculate_layout_points(FONT_W, FONT_H);
-}
 
 // Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
 void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr) {
@@ -116,11 +91,10 @@ void init_glyph_cache(void) {
     // 2. Testar med Latin-1 tecken
     for (int c = 32; c < 256; c++) {
         // Hämta startadressen för det enskilda tecknet i fontens rådata
-        const uint8_t* source_glyph = current_font.data + (c * current_font.bytes_per_char);
+        const uint8_t* source_glyph = wim_font_24x43 + (c * FONT_24X43_BYTES);
 
-        // 3. Vänd arrayen baklänges för att rotera tecknet 180 grader för skärmen
-        for (int i = 0; i < current_font.bytes_per_char; i++) {
-            pre_flipped_glyphs[c][i] = source_glyph[current_font.bytes_per_char - 1 - i];
+        for (int i = 0; i < FONT_24X43_BYTES; i++) {
+            pre_flipped_glyphs[c][i] = source_glyph[FONT_24X43_BYTES - 1 - i];
         }
     }
 }
@@ -144,11 +118,13 @@ void cleanup_display(void) {
 
 // Enkel uppslagning
 int get_physical_x(int col) {
-    return point_x[col];
+    // Vänder på X eftersom fysiskt origo skiljer sig från virtuellt
+    return SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * FONT_W);
 }
 
 int get_physical_y(int row) {
-    return point_y[row];
+    // Vänder på Y (Justerar för statiskt radavstånd)
+    return SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * ROW_HEIGHT) + LINE_LINE_SPACING_PX;
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
@@ -168,14 +144,14 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
     // dolda raden kan innehålla det överflyttade ordet från word_wrap).
     int rows_to_copy = keep_rows + 1;
 
-    int chars_to_copy = rows_to_copy * current_max_cols;
-    int source_offset = shift_up * current_max_cols;
+    int chars_to_copy = rows_to_copy * MAX_COLS;
+    int source_offset = shift_up * MAX_COLS;
 
     // 4. Skifta upp de bevarade raderna (inklusive det nedbrutna ordet) till toppen
     memmove(buffer, buffer + source_offset, chars_to_copy);
 
     // 5. Rensa all text nedanför (inklusive den dolda raden som orsakade hoppet)
-    int total_buffer_size = (current_max_rows + 2) * current_max_cols;
+    int total_buffer_size = (MAX_ROWS + 2) * MAX_COLS;
     memset(buffer + chars_to_copy, ' ', total_buffer_size - chars_to_copy);
 
     // 6. Sätt markören på den nya raden, precis under den bevarade texten[cite: 2]
@@ -191,14 +167,13 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
 // Ny hjälpfunktion: Renderar en eller flera hela rader i ett enda anrop
 void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE target_addr) {
     if (start_row < 0) start_row = 0;
-    if (end_row >= current_max_rows) end_row = current_max_rows - 1;
+    if (end_row >= MAX_ROWS) end_row = MAX_ROWS - 1;
     if (start_row > end_row) return;
 
     int num_rows = end_row - start_row + 1;
     int physical_w = SCREEN_WIDTH;
-    int spacing_px = get_line_spacing_px();
-    int physical_h = num_rows * (FONT_H + spacing_px);
-    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (FONT_H + spacing_px)) + spacing_px;
+    int physical_h = num_rows * (FONT_H + LINE_SPACING_PX);
+    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (FONT_H + LINE_SPACING_PX)) + LINE_SPACING_PX;
 
     // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
     // Bounding box för raderna (dimensionerad för max höjd inklusive extremt radavstånd = 1448 x 384 px i RAM)
@@ -207,7 +182,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
 
     // Rita in alla faktiska tecken från textbufferten in i denna nya vita låda
     for (int r = start_row; r <= end_row; r++) {
-        for (int c = 0; c < current_max_cols; c++) {
+        for (int c = 0; c < MAX_COLS; c++) {
             char ch = BUF_AT(buffer, r, c);
             if (ch >= 32 && ch <= 256 && ch != ' ') {
                 const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)ch];
@@ -230,7 +205,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
 
 void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     int old_row = *cursor_row;
-    int row_start = old_row * current_max_cols;
+    int row_start = old_row * MAX_COLS;
     int break_col = *cursor_col - 1;
 
     // Leta bakåt efter senaste mellanslaget
@@ -252,9 +227,9 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
         (*cursor_row)++;
         *cursor_col = word_len;
 
-        if (*cursor_row >= current_max_rows) {
+        if (*cursor_row >= MAX_ROWS) {
             // FIX: Klistra in ordet i RAM på den "dolda" raden innan vi hoppar
-            int new_row_start = (*cursor_row) * current_max_cols;
+            int new_row_start = (*cursor_row) * MAX_COLS;
             for (int i = 0; i < word_len; i++) {
                 buffer[new_row_start + i] = temp_str[i];
             }
@@ -263,7 +238,7 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         } else {
             // (Behåll din befintliga else-logik här)
-            int new_row_start = (*cursor_row) * current_max_cols;
+            int new_row_start = (*cursor_row) * MAX_COLS;
             for (int i = 0; i < word_len; i++) {
                 buffer[new_row_start + i] = temp_str[i];
             }
@@ -274,7 +249,7 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
         // Brutal radbrytning om inget mellanslag existerar
         (*cursor_row)++;
         *cursor_col = 0;
-        if (*cursor_row >= current_max_rows) {
+        if (*cursor_row >= MAX_ROWS) {
             display_jump(buffer, cursor_row, cursor_col, target_addr);
         }
     }
@@ -359,12 +334,12 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
 
     // Iterera över hela bufferten linjärt
-    for (int i = 0; i < current_max_rows * current_max_cols; i++) {
+    for (int i = 0; i < MAX_ROWS * MAX_COLS; i++) {
         char c = buffer[i];
         if (c == ' ' || c == '\0') continue;
 
-        int row = i / current_max_cols;
-        int col = i % current_max_cols;
+        int row = i / MAX_COLS;
+        int col = i % MAX_COLS;
 
         // Beräkna inverterade koordinater för fysisk rotation direkt
         int px = get_physical_x(col);
@@ -381,38 +356,4 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     }
 
     send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
-}
-
-// Funktion för att byta font dynamiskt via F6 eller vid uppstart
-void set_active_font(int font_choice) {
-    if (font_choice == 1) {
-        current_font.data = (const uint8_t*)wim_font_24x32;
-        FONT_W = FONT_24X32_W;
-        FONT_H = FONT_24X32_H;
-        current_font.bytes_per_char = FONT_24X32_BYTES;
-    }else {
-        current_font.data = (const uint8_t*)wim_font_24x43;
-        FONT_W = FONT_24X43_W;
-        FONT_H = FONT_24X43_H;
-        current_font.bytes_per_char = FONT_24X43_BYTES;
-    }
-
-    // Så fort fonten ändras, måste vi ladda om den spegelvända cachen
-    init_glyph_cache();
-}
-
-void calculate_layout_points(int font_w, int font_h) {
-    int spacing_px = get_line_spacing_px();
-
-    current_max_cols = (SCREEN_WIDTH - MARGIN_LEFT - MARGIN_RIGHT) / font_w;
-
-    // Beräkna max antal rader med radavståndet inkluderat, baserat på dina marginaler[cite: 2]
-    current_max_rows = (SCREEN_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM) / (font_h + spacing_px);
-
-    for (int col = 0; col < current_max_cols; col++) {
-        point_x[col] = SCREEN_WIDTH - MARGIN_LEFT - ((col + 1) * font_w);
-    }
-    for (int row = 0; row < current_max_rows; row++) {
-        point_y[row] = SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * (font_h + spacing_px)) + spacing_px;
-    }
 }

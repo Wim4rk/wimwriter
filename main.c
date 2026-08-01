@@ -35,10 +35,6 @@ int main() {
     printf("Initierar IT8951-display via SPI...\n");
     init_display(&target_addr);
 
-    printf("Initierar font...\n");
-    set_active_font(2);
-    calculate_layout_points(current_font.width, current_font.height);
-
     printf("Kopplar upp tangentbord...\n");
     int kb_fd = keyboard_init(KEYBOARD_DEVICE);
     if (kb_fd < 0) {

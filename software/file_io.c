@@ -32,7 +32,7 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
 
     // 4. Hitta startpunkten. Vi backar minst en full skärmlängd tecken bakåt,
     // vilket är tillräckligt för att garanterat fylla vyn.
-    int start_index = doc_length - (current_max_rows * current_max_cols);
+    int start_index = doc_length - (MAX_ROWS * MAX_COLS);
     if (start_index < 0) start_index = 0;
 
     // Försök backa till närmaste radbrytning för att få en ren start
@@ -55,9 +55,9 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
             c++;
 
             // Tyst Word Wrap: Radbrytning utan SPI-anrop
-            if (c >= current_max_cols) {
+            if (c >= MAX_COLS) {
                 int break_col = c - 1;
-                int row_start = r * current_max_cols;
+                int row_start = r * MAX_COLS;
 
                 // Leta efter mellanslag
                 while (break_col > 0 && buffer[row_start + break_col] != ' ') {
@@ -77,14 +77,14 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
                     c = word_len;
 
                     // Tyst Jump: Om vi slår i botten, rulla skärmen uppåt i RAM
-                    if (r >= current_max_rows) {
-                        memmove(buffer, buffer + current_max_cols, (current_max_rows - 1) * current_max_cols);
-                        memset(buffer + (current_max_rows - 1) * current_max_cols, ' ', current_max_cols);
-                        r = current_max_rows - 1;
+                    if (r >= MAX_ROWS) {
+                        memmove(buffer, buffer + MAX_COLS, (MAX_ROWS - 1) * MAX_COLS);
+                        memset(buffer + (MAX_ROWS - 1) * MAX_COLS, ' ', MAX_COLS);
+                        r = MAX_ROWS - 1;
                     }
 
                     // Sätt in ordet på den nya raden
-                    int new_row_start = r * current_max_cols;
+                    int new_row_start = r * MAX_COLS;
                     for (int j = 0; j < word_len; j++) {
                         buffer[new_row_start + j] = temp_str[j];
                     }
@@ -97,22 +97,22 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
         }
 
         // Tyst Jump igen för vanliga radbrytningar
-        if (r >= current_max_rows) {
-            memmove(buffer, buffer + current_max_cols, (current_max_rows - 1) * current_max_cols);
-            memset(buffer + (current_max_rows - 1) * current_max_cols, ' ', current_max_cols);
-            r = current_max_rows - 1;
+        if (r >= MAX_ROWS) {
+            memmove(buffer, buffer + MAX_COLS, (MAX_ROWS - 1) * MAX_COLS);
+            memset(buffer + (MAX_ROWS - 1) * MAX_COLS, ' ', MAX_COLS);
+            r = MAX_ROWS - 1;
         }
     }
 
     // 6. Justera vyhöjden enligt specifikation (lämna JUMP_LINES tomma i botten)[cite: 2]
-    int target_row = current_max_rows - JUMP_LINES;
+    int target_row = MAX_ROWS - JUMP_LINES;
     if (r > target_row) {
         int lines_to_shift = r - target_row;
         // Skifta hela bufferten uppåt
-        memmove(buffer, buffer + (lines_to_shift * current_max_cols), (current_max_rows - lines_to_shift) * current_max_cols);
+        memmove(buffer, buffer + (lines_to_shift * MAX_COLS), (MAX_ROWS - lines_to_shift) * MAX_COLS);
 
         // Rensa de nedersta raderna som vi lämnar tomma
-        memset(buffer + (current_max_rows - lines_to_shift) * current_max_cols, ' ', lines_to_shift * current_max_cols);
+        memset(buffer + (MAX_ROWS - lines_to_shift) * MAX_COLS, ' ', lines_to_shift * MAX_COLS);
         r = target_row;
     }
 

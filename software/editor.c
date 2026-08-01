@@ -257,7 +257,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                     // X-koordinaten sätts till den visuellt sista bokstaven (pga rotation)
                     int px_back = get_physical_x(*cursor_col - 1);
                     int py_back = get_physical_y(*cursor_row);
-                    clear_area(px_back, py_back, word_len * current_font.width, current_font.height, target_addr);
+                    clear_area(px_back, py_back, word_len * FONT_W, FONT_H, target_addr);
 
                     *cursor_col = start_col;
                 }
@@ -282,7 +282,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 } else if (*cursor_row > 0) {
                     // Vi är på kolumn 0, hoppa upp en rad
                     (*cursor_row)--;
-                    *cursor_col = current_max_cols - 1;
+                    *cursor_col = MAX_COLS - 1;
 
                     // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
                     while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
@@ -302,7 +302,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             int px_back = get_physical_x(*cursor_col);
             int py_back = get_physical_y(*cursor_row);
 
-            clear_area(px_back, py_back, current_font.width, current_font.height, target_addr);
+            clear_area(px_back, py_back, FONT_W, FONT_H, target_addr);
             break;
         default: // Vanliga tecken
             // Uppdatera if-satsen här så den släpper igenom svenska tecken
@@ -334,7 +334,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                 }
 
                 // Hantera automatisk radbrytning
-                if (*cursor_col >= current_max_cols) {
+                if (*cursor_col >= MAX_COLS) {
                     // Spola ut eventuella tecken innan vi bryter raden
                     editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
@@ -344,7 +344,7 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
     }
 
     // Hoppa upp (Jump) om vi når botten av den definierade skrivytan[cite: 1, 2]
-    if (*cursor_row >= current_max_rows) {
+    if (*cursor_row >= MAX_ROWS) {
         display_jump(text_buffer, cursor_row, cursor_col, target_addr);
     }
 }
