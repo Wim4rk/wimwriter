@@ -5,10 +5,6 @@
 
 /* Dimensioner och bytestorlekar för statisk allokering */
 
-#define FONT_24X32_W 24
-#define FONT_24X32_H 32
-#define FONT_24X32_BYTES 768
-
 #define FONT_24X43_W 24
 #define FONT_24X43_H 43
 #define FONT_24X43_BYTES 1032
