@@ -75,7 +75,7 @@ Sparar öppen fil, rensar skärmen och ger en ny skrivyta. F2/F3 kommer prompta 
 
 ### F5 - Uppdatera skärmen
 
-Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess innehåll återställs så fort som möjligt.
+Fullständig uppdatering av skärmen, INIT(Mode 0) eller GC16?. Skärmen rensas och dess innehåll återställs så fort som möjligt.
 
 ### F9 - Synkronisera
 

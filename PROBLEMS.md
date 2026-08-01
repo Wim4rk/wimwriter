@@ -17,7 +17,7 @@ Här är en översikt över exakt vad som krävs för att låsa fast layouten. G
 
 ## Filhantering
 
-Jag lyckades uppdatera lite textfiler idag, men det betedde sig inte som förväntat. "Spara som" sparade bara filen, inte innehållet. När jag sparade därefter sparades varje tecken två gånger: "HHaarr  jjaagg  iinnggeett  ssppaarraatt  hhrr..  DDeett  rr  iinnttee  bbrraa.." Där finns inga svenska tecken heller.
+Jag lyckades uppdatera lite textfiler igår, men det betedde sig inte som förväntat. "Spara som" sparade bara filen, inte innehållet. När jag sparade därefter sparades varje tecken två gånger: "HHaarr  jjaagg  iinnggeett  ssppaarraatt  hhrr..  DDeett  rr  iinnttee  bbrraa.." Där finns inga svenska tecken heller.
 
 Debugga och bygg vidare. Spara dokument på ett logiskt ställe. ~/Dokument/writer kanske?
 
@@ -29,10 +29,4 @@ Bokstäver med shift har strulat lite. Undersök och förbättra.
 
 Ctrl + Backspace över radbrytning: Det fungerar inte att hoppa över rader. Vanlig backspace fungerar som förväntat.
 
-## Renderings-reparationer
-
-Vid ett uppehåll (timeout) kan vi stämma av skillnaden mellan skärmen och skrivbufferten. Om det behövs kan vi uppdatera skrivytan.
-
-Om inte annat kan det vara dags att tita på hur vi gör för att snygga till sidan. Läsa in hela skärmen igen, och uppdatera med GC16 till att börja med. INIT(0) når jag genom F5.
-
-*Dokumentet uppdaterat 2026-07-31*
+*Dokumentet uppdaterat 2026-08-01*
