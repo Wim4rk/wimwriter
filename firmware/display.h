@@ -64,7 +64,7 @@ void refresh_display_full(void); // Kör INIT (Mode 0) via F5
 void render_char(char c, int physical_x, int physical_y, UDOUBLE target_addr);
 void clear_area(int physical_x, int physical_y, int width, int height, UDOUBLE target_addr);
 void render_status_bar(const char *text, UDOUBLE target_addr);
-
+void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE target_addr);
 // ---------------------------------------------------------
 // Hjälpfunktioner för layout (Hanterar virtuell padding)
 // ---------------------------------------------------------
