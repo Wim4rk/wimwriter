@@ -69,9 +69,7 @@ void keyboard_close(int fd) {
 }
 
 // Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 1, 2]
-bool keyboard_is_shift_pressed(void) {
-    return shift_pressed;
-}
+return left_shift_pressed || right_shift_pressed;
 
 // Publik funktion så editor.c kan kontrollera ctrl (t.ex. Ctrl + Backspace)
 bool keyboard_is_ctrl_pressed(void) {
