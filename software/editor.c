@@ -166,15 +166,8 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
 
     if (!is_ctrl_bs) {
         if (c == 127) model_delete_char();
-        // 2. Uppdatera denna rad:
-        else if (uc >= 32 || c == '\n') model_insert_char(c);
-        append_to_temp_file(c);
-    }
 
-    // 1. Logik för Datamodellen (RAM)
-    if (!is_ctrl_bs) {
-        if (c == 127) model_delete_char();
-        else if ((c >= 32 && c <= 126) || c == '\n') model_insert_char(c);
+        else if (uc >= 32 || c == '\n') model_insert_char(c);
         append_to_temp_file(c);
     }
 

@@ -154,7 +154,7 @@ void save_document_to_file(const char *filename) {
         char ch = model_char_at(i);
 
         // Skriv endast giltiga tecken samt radbrytningar
-        if ((ch >= 32 && ch <= 126) || ch == '\n') {
+        if ((unsigned char)ch >= 32 || ch == '\n') {
             fputc(ch, file);
         }
     }
