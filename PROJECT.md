@@ -11,7 +11,7 @@ För att projektet ska vara intressant och framgångsrikt måste vi kompromissl�
 1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet.
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
 3. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
-4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas.
+4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas, och swapfilen ersättas.
 
 ---
 
@@ -44,8 +44,8 @@ För att uppnå våra mål och undvika flaskhalsar på ARMv6-arkitekturen har vi
 #### Inmatning & Logik (C-baserat "Bare-Metal"-tänk)
 
 * Vi bygger en **C-baserad renderingsmotor** som körs direkt mot Waveshares officiella C-bibliotek (bcm2835-baserat) för att styra IT8951 direkt via SPI. Python (och bibliotek som Pillow) är för tunga för att uppnå minimal latens.
-* **Glyph Caching:** Vid uppstart renderar C-programmet ett typsnitt och sparar dem som monokroma ($32 \times 64$px) bitmapps-arrayer direkt i RAM-minnet.
-* När en tangent trycks ned ska `evdev` läsa av detta. Programmet ska göra en blixtsnabb `memcpy` av rätt bokstavs-bitmapp och skicka endast den lilla förändrade rutan (damage box, ca 256 bytes) över SPI.
+* **Glyph Caching:** Vid uppstart renderar C-programmet ett typsnitt och sparar dem som monokroma bitmapps-arrayer direkt i RAM-minnet.
+* När en tangent trycks ned ska `epoll` läsa av detta. Programmet ska göra en blixtsnabb `memcpy` av rätt bokstavs-bitmapp och skicka endast den lilla förändrade rutan (damage box, ca 256 bytes) över SPI.
 
 #### Skärmstyrning (IT8951-optimering)
 

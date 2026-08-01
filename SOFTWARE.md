@@ -2,9 +2,9 @@
 
 Text hanteras i en textfil i bakgrunden. Skärmen är en display. Textfilen uppdaterar skärmen, skärmen kan inte uppdatera textfilen.
 
-* **Modellen - dokumentbufferten**. Hanterar hela dokumentet oberoende av skärmens dimenskioner. När jag matar in text via tanngentbordet fånger evdev upp detta och uppdaterar modellen omedelbart. Eftersom vi tänker tillåta redigering inuti texten, kan en datastruktur som en *gap buffer* vara en lämplig väg att undersöka.
-*  **Vyn - skärmbuffet**. Fungerar enbart som ett temporärt fönster över en spevifik del av modellen.
-*  **IT8951 och SPI**. Nör texten läggs till i modellen utvärderas vyn. Endast den yta som faktiskt förändrats (damage box) överförs via SPI till IT8951-kontrollern.
+* **Modellen - dokumentbufferten**. Hanterar hela dokumentet oberoende av skärmens dimensioner. När jag matar in text via tangentbordet fånger epoll upp detta och uppdaterar modellen omedelbart. Eftersom vi tänker tillåta viss redigering inuti texten, kan en datastruktur som en *gap buffer* vara en lämplig väg att undersöka.
+*  **Vyn - skärmbuffet**. Fungerar enbart som ett temporärt fönster över en specifik del av modellen.
+*  **IT8951 och SPI**. När texten läggs till i modellen utvärderas vyn. Endast den yta som faktiskt förändrats (damage box) överförs via SPI till IT8951-kontrollern.
 
 ---
 # Specifikationer för skrivmiljön
@@ -17,15 +17,7 @@ Det vi har att kämpa med är skärmens latens och långsamma uppdatering. Kompr
 
 ## Statusrad
 
-En statusrad dyker upp *när den behövs*. Den visar relevant information som till exempel filnamn vid filbyte.
-
-## Skrivytans storlek
-
-Vår display är 1448x1072 pixlar. Varje tecken är 32x64 pixlar.
-* Statusradens höjd: teckenhöjd (64 pixlar) plus en skiljeline (4 pixlar) ger 68 pixlar. Den nedre marginalen är alltså 68 pixlar hög.'
-* Marginaler höger och vänster: 68 pixlar var. Det lämnar 1312 pixlar. Dessa delas upp i 41 kollumner.
-* Toppmarginalen kompromissas ner till 44 pixlar vilket ger oss möjlighet till 15 rader.
-
+En statusrad dyker upp *när den behövs*. Den visar relevant information som till exempel filnamn vid filbyte. Den ska också försvinna så snart den inte behövs.
 
 ## Jump
 
@@ -33,7 +25,7 @@ När skrivprompten når skrivytans slut genomför vi ett "jump". Istället för 
 
 ## Radbrytning
 
-Vi tillämpar word wrapping i A2-läge. Vi låter ordet hoppa ner, och raderar den gamla positionen. Om detta stör skrivflytet kan vi testa att inte radera förrän en naturlig paus uppstår, eller om funktionen Jump exekveras.
+Vi tillämpar word wrapping i A2-läge. Vi låter ordet hoppa ner, och raderar den gamla positionen.
 
 ## Spara och back-up
 
@@ -52,7 +44,7 @@ Använd funktionsknapparna enligt fastställd praxis.Tänk CUA-standard (Common 
 | F3     | Öppna     | Öppna dokument/kataloger (Cycklar mellan textfiler) |
 | F4     | Ny fil    | Nytt dokument |
 | F5     | Uppd disp | Tvingar fullständig uppdatering av skärmen |
-| F6     | Fontsize  | Reserverad för ändring av fontstorlek |
+| F6     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F7     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F8     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F9     | Synk.     | Synkronisera enligt program/rutin  |
@@ -79,15 +71,11 @@ Det återstår att se om bläckskärmen klarar av det här på ett tillfredsstä
 
 ### F4 - Nytt dokument
 
-Rensa bara skärmen, ge mig en ny skrivyta. Möjligtvis en notering i statusraden om att detta är en ny fil? Esc avbryter och återgår till senast bearbetade fil.
+Sparar öppen fil, rensar skärmen och ger en ny skrivyta. F2/F3 kommer prompta användaren att spara filen om den inte är tom.
 
 ### F5 - Uppdatera skärmen
 
 Fullständig uppdatering av skärmen, INIT(Mode 0). Skärmen rensas och dess innehåll återställs så fort som möjligt.
-
-### F6 - Font (teckenstorlek)
-
-Skall byta mellan två olika teckenstorlekar. Mest för att testa olika fonter. Koden är i stort sett på plats.
 
 ### F9 - Synkronisera
 
@@ -98,24 +86,27 @@ Skall byta mellan två olika teckenstorlekar. Mest för att testa olika fonter. 
 
 En *manual override* som låter dig slå på/av WiFi, till exempel för administration över SSH. När WiFi är på skall statusraden vara igång hela tiden och visa "WiFi".
 
+## Filhantering
+
+**F2 Sparar fil.** Om ingen fil är skapad, skapa en ny fil och fråga efter filnamnet i statusraden (sparas som).
+**F3 Växla fil.** Växlar mellan dokument i tids-ordning. F3 en gång sparar aktuellt dokument (eller spara som, om ingen fil är skapad) och hoppar till senaste dokumentet, två gånger till näst senaste osv. Enter öppnar filen på skärmen för redigering. Esc återgår till aktuell fil.
+**F4 Ny fil.** Tömmer skrivytan så att användaren kan börja skriva en ny fil.
+
 ## Spara state
 
-* Spara vid ändring (F3, F6): Variabler som sällan ändras, såsom aktiv font och filhistorik, sparas direkt när växlingen sker. Eftersom dessa händelser ändå kräver en uppdatering av skärmen och en naturlig paus i skrivandet, kommer systemet inte att blockeras under aktiv inmatning. 
-* Spara via GPIO (Avstängning): Dynamiska data som skrivpromptens exakta position, inaktivitetstimer, när senaste backup gjordes, samt exakt vad som finns i skärmbufferten sparas undan när maskinen stängs av. Eftersom GPIO-knappen redan är avsedd att trigga ditt "Safe Shutdown"-skript och en asynkron synkronisering, är detta det logiska tillfället att säkra arbetsmiljöns sista status innan EN-stiftet bryter strömmen.  
-
-## Navigera
-
-Vi behöver se till att pilarna, page up/down, home och end fungerar som förväntat. Även med mod-tangenter (Ctrl + Home/End, Ctrl + Pil H/V). 
-
-## Redigera text
-
-Om jag ställer prompten någon annanstans än i slutet av texten (för att redigera) så ska texten *efter* prompten suddas bort från skärmen medan jag skriver. När jag sedan använder andra tangenter (pilar, Home, End, Funktionstangenter) eller blir inaktiv så ska all text renderas igen. Här behöver vi tillämpa stitching igen.
-
-Alla tangenter ska fungera som förväntat, inklusive insert, backspace och delete (Även Ctrl + Backspace/Delete).
+* Dynamiska data som skrivpromptens exakta position, när senaste backup gjordes, samt exakt vad som finns i skärmbufferten sparas undan när maskinen stängs av, eller filen växlas.
 
 ---
 
 ## Nedprioriterade funktioner
+
+Detta är saker vi väntar med tills allt annat fungerar
+
+* **Navigera** Vi behöver se till att pilarna, page up/down, home och end fungerar som förväntat. Även med mod-tangenter (Ctrl + Home/End, Ctrl + Pil H/V). 
+
+* **Redigera text** Om jag ställer prompten någon annanstans än i slutet av texten (för att redigera) så ska texten *efter* prompten suddas bort från skärmen medan jag skriver. När jag sedan använder andra tangenter (pilar, Home, End, Funktionstangenter) eller blir inaktiv så ska all text renderas igen. Här behöver vi tillämpa stitching igen.
+
+Alla tangenter ska fungera som förväntat, inklusive insert, backspace och delete (Även Ctrl + Backspace/Delete).
 
 Detta är saker vi implementerar *om det visar sig möjligt*.
 
