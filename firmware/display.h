@@ -24,20 +24,29 @@
 // Parameter för hur många rader som bevaras vid Jump
 #define JUMP_LINES 2
 
+// ---------------------------------------------------------
+// Hårdkodad Layout (Latensoptimering för ARMv6)
+// ---------------------------------------------------------
+#define FONT_W 24
+#define FONT_H 43
+#define LINE_SPACING_PX 21
+
+// Total radhöjd blir 64 pixlar
+#define ROW_HEIGHT (FONT_H + LINE_SPACING_PX)
+
+// Skrivytans layout (Statiska marginaler)
+#define MARGIN_LEFT 68
+#define MARGIN_RIGHT 68
+#define MARGIN_TOP 44
+#define MARGIN_BOTTOM 68
+
+// Statiskt uträknade maxvärden (Exempelvis 54 kolumner och 15 rader)
+#define MAX_COLS ((SCREEN_WIDTH - MARGIN_LEFT - MARGIN_RIGHT) / FONT_W)
+#define MAX_ROWS ((SCREEN_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM) / ROW_HEIGHT)
+
 // Tillräckligt stort för att hantera en väldigt liten teckenstorlek
 #define ABSOLUTE_MAX_COLS 120
 #define ABSOLUTE_MAX_ROWS 60
-// ---------------------------------------------------------
-// Font- och Buffertkonfiguration
-// ---------------------------------------------------------
-typedef struct {
-    const uint8_t* data;
-    uint8_t width;
-    uint8_t height;
-    uint16_t bytes_per_char;
-} ActiveFont;
-
-extern ActiveFont current_font;
 
 // Dynamiska variabler (räknas ut och sätts i display.c vid fontbyte)
 // Våra förberedda punkter (Lookup Tables)
