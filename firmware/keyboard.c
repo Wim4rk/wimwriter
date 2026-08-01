@@ -68,12 +68,13 @@ void keyboard_close(int fd) {
     if (fd != -1) close(fd);
 }
 
-// Publik funktion så main.c kan kontrollera shift (t.ex. Shift + F3)[cite: 1, 2]
-return left_shift_pressed || right_shift_pressed;
-
 // Publik funktion så editor.c kan kontrollera ctrl (t.ex. Ctrl + Backspace)
 bool keyboard_is_ctrl_pressed(void) {
     return ctrl_pressed;
+}
+
+bool keyboard_is_shift_pressed(void) {
+    return left_shift_pressed || right_shift_pressed;
 }
 
 char keyboard_get_char(struct input_event *ev) {
