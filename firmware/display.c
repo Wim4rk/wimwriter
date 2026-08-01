@@ -27,8 +27,8 @@ LineSpacing current_spacing_mode = SPACING_ONE_AND_HALF;
 // Beräknar hur många extra pixlar som ska läggas till per rad
 int get_line_spacing_px(void) {
     switch (current_spacing_mode) {
-        case SPACING_ONE_AND_HALF: return current_font.height / 2;
-        case SPACING_DOUBLE: return current_font.height;
+        case SPACING_ONE_AND_HALF: return FONT_H / 2;
+        case SPACING_DOUBLE: return FONT_H;
         case SPACING_SINGLE:
         default: return 0;
     }
@@ -37,7 +37,7 @@ int get_line_spacing_px(void) {
 // Gör det möjligt att byta radavstånd "on the fly" (t.ex. via en framtida funktionstangent)
 void set_line_spacing(LineSpacing mode) {
     current_spacing_mode = mode;
-    calculate_layout_points(current_font.width, current_font.height);
+    calculate_layout_points(FONT_W, FONT_H);
 }
 
 // Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
@@ -104,7 +104,7 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
     if ((unsigned char)c < 32) return;
 
     // Den här raden försvann och måste tillbaka!
-    send_and_display_buffer(pre_flipped_glyphs[(unsigned char)c], x, y, current_font.width, current_font.height, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(pre_flipped_glyphs[(unsigned char)c], x, y, FONT_W, FONT_H, target_addr, IT8951_A2_MODE);
 }
 
 // Funktionen bygger font-cachen i RAM.
@@ -197,8 +197,8 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
     int num_rows = end_row - start_row + 1;
     int physical_w = SCREEN_WIDTH;
     int spacing_px = get_line_spacing_px();
-    int physical_h = num_rows * (current_font.height + spacing_px);
-    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (current_font.height + spacing_px)) + spacing_px;
+    int physical_h = num_rows * (FONT_H + spacing_px);
+    int physical_y_start = SCREEN_HEIGHT - MARGIN_TOP - ((end_row + 1) * (FONT_H + spacing_px)) + spacing_px;
 
     // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
     // Bounding box för raderna (dimensionerad för max höjd inklusive extremt radavstånd = 1448 x 384 px i RAM)
@@ -215,10 +215,10 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
                 int char_py_abs = get_physical_y(r);
                 int rel_y = char_py_abs - physical_y_start; // Relativ höjd inuti row_buffer
                 // Kopiera in glyfen i lokala bufferten
-                for (int h = 0; h < current_font.height; h++) {
+                for (int h = 0; h < FONT_H; h++) {
                     memcpy(&row_buffer[(rel_y + h) * physical_w + char_px],
-                           &glyph[h * current_font.width],
-                           current_font.width);
+                           &glyph[h * FONT_W],
+                           FONT_W);
                 }
             }
         }
@@ -288,33 +288,33 @@ void render_stitched_text(const char *text, int physical_x, int physical_y, UDOU
 
     if (len == 0) return;
 
-    int text_pixel_width = len * current_font.width;
+    int text_pixel_width = len * FONT_W;
 
     // Eftersom physical_x är startpunkten för det FÖRSTA tecknet (visuellt längst till vänster,
     // vilket är fysiskt längst till höger pga rotation), är lådans lägsta fysiska X-koordinat:
-    int box_physical_x = physical_x - text_pixel_width + current_font.width;
+    int box_physical_x = physical_x - text_pixel_width + FONT_W;
 
     // Statisk RAM-buffert för att skona ARMv6
     static UBYTE stitch_buffer[1448 * 64];
-    memset(stitch_buffer, 0xFF, text_pixel_width * current_font.height);
+    memset(stitch_buffer, 0xFF, text_pixel_width * FONT_H);
 
     // Det första tecknet placeras högst upp i lokala X-koordinater inuti bufferten
-    int current_local_x = text_pixel_width - current_font.width;
+    int current_local_x = text_pixel_width - FONT_W;
 
     for (int i = 0; i < len; i++) {
         unsigned char uc = (unsigned char)text[i];
         if (uc < 32) uc = ' '; // Rensa bara bort styrtecken
 
         const UBYTE *glyph = pre_flipped_glyphs[uc];
-        for (int h = 0; h < current_font.height; h++) {
+        for (int h = 0; h < FONT_H; h++) {
             memcpy(&stitch_buffer[h * text_pixel_width + current_local_x],
-                   &glyph[h * current_font.width],
-                   current_font.width);
+                   &glyph[h * FONT_W],
+                   FONT_W);
         }
-        current_local_x -= current_font.width; // Stega fysiskt åt vänster för nästa tecken
+        current_local_x -= FONT_W; // Stega fysiskt åt vänster för nästa tecken
     }
 
-    send_and_display_buffer(stitch_buffer, box_physical_x, physical_y, text_pixel_width, current_font.height, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(stitch_buffer, box_physical_x, physical_y, text_pixel_width, FONT_H, target_addr, IT8951_A2_MODE);
 }
 
 void render_status_bar(const char *text, UDOUBLE target_addr) {
@@ -330,7 +330,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     memset(status_buffer, 0xFF, sizeof(status_buffer));
 
     // Fysisk X-koordinat börjar i högerkant (din visuella vänsterkant)
-    int physical_x = SCREEN_WIDTH - current_font.width;
+    int physical_x = SCREEN_WIDTH - FONT_W;
 
     for (int i = 0; text[i] != '\0' && physical_x >= 0; i++) {
         unsigned char uc = (unsigned char)text[i];
@@ -340,15 +340,15 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
             const UBYTE *glyph = pre_flipped_glyphs[uc];
 
             // Kopiera in den roterade glyfen i vår statusbuffert
-            for (int h = 0; h < current_font.height; h++) {
+            for (int h = 0; h < FONT_H; h++) {
                 memcpy(&status_buffer[h * physical_w + physical_x],
-                       &glyph[h * current_font.width],
-                       current_font.width);
+                       &glyph[h * FONT_W],
+                       FONT_W);
             }
         }
 
         // Stega fysiskt åt vänster för nästa tecken
-        physical_x -= current_font.width;
+        physical_x -= FONT_W;
     }
 
     // Ett enda massivt SPI-anrop till IT8951 för hela statusraden
@@ -373,10 +373,10 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
 
         // Blockkopiera glyphen till skärmbufferten
-        for (int h = 0; h < current_font.height; h++) {
+        for (int h = 0; h < FONT_H; h++) {
             memcpy(&full_screen_buffer[(py + h) * SCREEN_WIDTH + px],
-                   &glyph[h * current_font.width],
-                   current_font.width);
+                   &glyph[h * FONT_W],
+                   FONT_W);
         }
     }
 
@@ -387,13 +387,13 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
 void set_active_font(int font_choice) {
     if (font_choice == 1) {
         current_font.data = (const uint8_t*)wim_font_24x32;
-        current_font.width = FONT_24X32_W;
-        current_font.height = FONT_24X32_H;
+        FONT_W = FONT_24X32_W;
+        FONT_H = FONT_24X32_H;
         current_font.bytes_per_char = FONT_24X32_BYTES;
     }else {
         current_font.data = (const uint8_t*)wim_font_24x43;
-        current_font.width = FONT_24X43_W;
-        current_font.height = FONT_24X43_H;
+        FONT_W = FONT_24X43_W;
+        FONT_H = FONT_24X43_H;
         current_font.bytes_per_char = FONT_24X43_BYTES;
     }
 
