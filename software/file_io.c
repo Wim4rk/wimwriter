@@ -6,8 +6,6 @@
 
 static FILE *temp_file = NULL;
 
-// Ersätt din befintliga load_file_into_buffer med denna:
-
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     // 1. Töm hela skärmbufferten i RAM
     memset(buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);

@@ -12,7 +12,6 @@
 EditorState current_state = STATE_EDITING;
 
 #define RENDER_THRESHOLD 8
-
 #define MAX_FILES_IN_DIR 50
 
 // Variabler för filhantering
@@ -34,29 +33,22 @@ typedef struct {
 static FileEntry file_list[MAX_FILES_IN_DIR];
 static int total_files_found = 0;
 
-// ==========================================
-// PLATSHÅLLARE (STUBS) - Fylls i senare
-// ==========================================
 static void show_help_box(void) {}
 static void hide_help_box_and_redraw(void) {}
 
 static void save_to_sd(const char *filename, UDOUBLE target_addr) {
-    // Anropar funktionen som läser från RAM-modellen
     save_document_to_file(filename);
 
-    // Visuell bekräftelse i statusraden
     char status_text[300];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
 }
 
 static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
-    // Om du vill implementera städningen direkt kan du lägga in:
     int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
     clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
 }
 
-// Bygger strängen och skickar den till skärmen
 static void update_status_bar_visuals(UDOUBLE target_addr) {
     char status_text[300];
     snprintf(status_text, sizeof(status_text), "Spara som: %s", current_filename);
@@ -64,24 +56,23 @@ static void update_status_bar_visuals(UDOUBLE target_addr) {
 }
 
 static void append_char_to_filename(char c) {
-    // Kontrollera så vi inte skriver utanför bufferten
     if (filename_len < sizeof(current_filename) - 1) {
         current_filename[filename_len] = c;
-        filename_len++; // Öka räknaren med 1
+        filename_len++;
         current_filename[filename_len] = '\0';
     }
 }
 
 static void remove_last_char_from_filename(void) {
     if (filename_len > 0) {
-        filename_len--; // Minska räknaren med 1
+        filename_len--;
         current_filename[filename_len] = '\0';
     }
 }
 
 static void clear_filename_buffer(void) {
     memset(current_filename, 0, sizeof(current_filename));
-    filename_len = 0; // Glöm inte att nollställa räknaren
+    filename_len = 0;
 }
 
 static void generate_default_filename(void){
@@ -92,7 +83,6 @@ static void generate_default_filename(void){
     filename_len = strlen(current_filename);
 }
 
-// Hjälpfunktion för qsort (Sorterar nyast först)
 static int compare_file_entries(const void *a, const void *b) {
     FileEntry *entry_a = (FileEntry *)a;
     FileEntry *entry_b = (FileEntry *)b;
@@ -109,16 +99,11 @@ static void scan_directory_for_files(void) {
     total_files_found = 0;
     current_file_index = 0;
 
-    d = opendir("."); // Leta i nuvarande katalog
+    d = opendir(".");
     if (d) {
         while ((dir = readdir(d)) != NULL && total_files_found < MAX_FILES_IN_DIR) {
-            // Kontrollera att det inte är en dold fil (t.ex. vår temp-fil)
             if (dir->d_name[0] != '.') {
-
-                // Leta efter antingen .txt eller .md[cite: 1]
                 if (strstr(dir->d_name, ".txt") != NULL || strstr(dir->d_name, ".md") != NULL) {
-
-                    // Hämta ändringsdatum
                     if (stat(dir->d_name, &file_stat) == 0) {
                         snprintf(file_list[total_files_found].filename, sizeof(file_list[total_files_found].filename), "%s", dir->d_name);
                         file_list[total_files_found].last_modified = file_stat.st_mtime;
@@ -129,13 +114,11 @@ static void scan_directory_for_files(void) {
         }
         closedir(d);
 
-        // Sortera listan så att den senast ändrade filen ligger på index 0[cite: 2]
         if (total_files_found > 0) {
             qsort(file_list, total_files_found, sizeof(FileEntry), compare_file_entries);
         }
     }
 }
-
 
 static void show_file_in_status_bar(UDOUBLE target_addr) {
     if (total_files_found == 0) return;
@@ -148,31 +131,26 @@ static void show_file_in_status_bar(UDOUBLE target_addr) {
 static void show_next_file(UDOUBLE target_addr) {
     if (total_files_found == 0) return;
 
-    // Stega framåt i listan, börja om på 0 om vi når slutet
     current_file_index++;
     if (current_file_index >= total_files_found) {
         current_file_index = 0;
     }
 
-    // Uppdatera statusraden med den nya filen
     show_file_in_status_bar(target_addr);
 }
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
-    unsigned char uc = (unsigned char)c; // 1. Lägg till denna!
-
+    unsigned char uc = (unsigned char)c;
     bool is_ctrl_bs = (c == 127 && keyboard_is_ctrl_pressed());
 
     if (!is_ctrl_bs) {
         if (c == 127) model_delete_char();
-
         else if (uc >= 32 || c == '\n') model_insert_char(c);
         append_to_temp_file(c);
     }
 
     if (c == 127 && pending_start_col != -1) {
-        // 1. Tecknet har inte ritats ut, så vi raderar det bara logiskt i RAM.
         if (*cursor_col > pending_start_col) {
             (*cursor_col)--;
             BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
@@ -180,13 +158,9 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
 
         editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
 
-        // 2. Om raderingen tömde hela kön, nollställ flaggan
         if (*cursor_col == pending_start_col) {
             pending_start_col = -1;
         }
-
-        // 3. Vi är klara med raderingen. Avbryt funktionen så att
-        // den vanliga backspace-logiken (med SPI-anropet) inte körs.
         return;
     }
 
@@ -200,126 +174,92 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
         case 127: // Backspace
             editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
             if (keyboard_is_ctrl_pressed()) {
-                int start_col = *cursor_col;
-
                 int r = *cursor_row;
                 int c = *cursor_col;
+                int old_row = *cursor_row;
 
                 // 1. Hoppa över eventuella mellanslag bakåt (även över radbrytningar)
                 while (r > 0 || c > 0) {
-                    // Beräkna koordinaterna för tecknet precis bakom nuvarande position
                     int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
                     int prev_r = (c == 0) ? r - 1 : r;
 
-                    // Om tecknet INTE är ett mellanslag har vi nått slutet på ett ord, avbryt
-                    if (BUF_AT(text_buffer, prev_r, prev_c) != ' ') {
-                        break;
-                    }
+                    if (BUF_AT(text_buffer, prev_r, prev_c) != ' ') break;
 
-                    // Annars, flytta markören bakåt och fortsätt leta
                     c = prev_c;
                     r = prev_r;
                 }
-
-                int words_start_row = r;
-                int words_start_col = c;
 
                 // 2. Leta bakåt tills vi hittar nästa mellanslag (för att hitta ordets början)
                 while (r > 0 || c > 0) {
                     int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
                     int prev_r = (c == 0) ? r - 1 : r;
 
-                    // Om tecknet ÄR ett mellanslag har vi hittat början på ordet, avbryt
-                    if (BUF_AT(text_buffer, prev_r, prev_c) == ' ') {
-                        break;
-                    }
+                    if (BUF_AT(text_buffer, prev_r, prev_c) == ' ') break;
 
                     c = prev_c;
                     r = prev_r;
                 }
 
-                int word_len = *cursor_col - start_col;
+                int word_len = (*cursor_row * MAX_COLS + *cursor_col) - (r * MAX_COLS + c);
+
                 if (word_len > 0) {
-
-                    // 3. Rensa vyn (text_buffer)
-                    for (int i = start_col; i < *cursor_col; i++) {
-                        BUF_AT(text_buffer, *cursor_row, i) = '\0';
-                    }
-
-                    // 4. Synka underliggande datamodell (GAP-bufferten)
-                    // Observera: "model_delete_char()" anropades redan 1 gång i toppen
-                    // av process_text_input, därför loopar vi word_len - 1.
-                    for (int i = 0; i < word_len - 1; i++) {
+                    // 3. Synka underliggande datamodell (GAP-bufferten)
+                    for (int i = 0; i < word_len; i++) {
                         model_delete_char();
                     }
 
-                    // 5. Rensa skärmen fysiskt i A2-läge.
-                    // X-koordinaten sätts till den visuellt sista bokstaven (pga rotation)
-                    int px_back = get_physical_x(*cursor_col - 1);
-                    int py_back = get_physical_y(*cursor_row);
-                    clear_area(px_back, py_back, word_len * FONT_W, FONT_H, target_addr);
+                    // 4. Stega markören bakåt och rensa skärmbufferten logiskt
+                    for (int i = 0; i < word_len; i++) {
+                        if (*cursor_col > 0) {
+                            (*cursor_col)--;
+                        } else if (*cursor_row > 0) {
+                            (*cursor_row)--;
+                            *cursor_col = MAX_COLS - 1;
+                        }
+                        BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
+                    }
 
-                    *cursor_col = start_col;
+                    // 5. Rita om de påverkade raderna
+                    render_rows_stitched(*cursor_row, old_row, text_buffer, target_addr);
                 }
             } else {
                 if (*cursor_col > 0) {
-                    // 1. Backa markören logiskt
                     (*cursor_col)--;
-
-                    // 2. Ta bort tecknet från dokumentbufferten (din vy)
                     BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
 
-                    // Radera från den underliggande datamodellen (GAP-buffert/temp-fil)
-                    // model_delete_char();
-
-                    // 3. Hämta fysiska koordinater för den NYA (backade) markörpositionen
                     int px_back = get_physical_x(*cursor_col);
                     int py_back = get_physical_y(*cursor_row);
 
-                    // 4. Rendera ett mellanslag.
-                    // Detta skickar den förladdade vita bitmappen från RAM direkt över SPI i A2-läge.
                     render_char(' ', px_back, py_back, target_addr);
                 } else if (*cursor_row > 0) {
-                    // Vi är på kolumn 0, hoppa upp en rad
                     (*cursor_row)--;
                     *cursor_col = MAX_COLS - 1;
 
-                    // Stega bakåt förbi de osynliga null-terminatorer som word_wrap har lämnat efter sig
                     while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
                         (*cursor_col)--;
                     }
                 } else {
-                    // Vi är i det absoluta övre vänstra hörnet, avbryt radering.
-                    // Eller ska vi ge möjlighet att rendera om skärmen ovanför och
                     break;
                 }
             }
 
-            // 1. Logisk radering i RAM-minnet
-            BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
-
-            // 2. Visuell radering på e-bläckskärmen i A2-läge
             int px_back = get_physical_x(*cursor_col);
             int py_back = get_physical_y(*cursor_row);
-
             clear_area(px_back, py_back, FONT_W, FONT_H, target_addr);
             break;
-        default: // Vanliga tecken
-            // Uppdatera if-satsen här så den släpper igenom svenska tecken
+
+        default:
             if (uc >= 32) {
                 BUF_AT(text_buffer, *cursor_row, *cursor_col) = c;
-                // STANDARDLÄGET: Ingen kö finns, och ingen ny tangent väntar i evdev-loopen
+
                 if (pending_start_col == -1 && !more_keys_waiting) {
-                    // Rendera tecknet omedelbart ("skrivmaskinsläget")
                     int px = get_physical_x(*cursor_col);
                     int py = get_physical_y(*cursor_row);
                     render_char(c, px, py, target_addr);
 
                     (*cursor_col)++;
                 }
-                // CATCH-UP: Maskinen ligger efter (fler tangenter väntar, eller en kö pågår redan)
                 else {
-                    // Markera startpunkt för kön (om det är första tecknet som buffras)
                     if (pending_start_col == -1) {
                         pending_start_col = *cursor_col;
                     }
@@ -327,15 +267,12 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                     (*cursor_col)++;
                     int queue_len = *cursor_col - pending_start_col;
 
-                    // Bryt kön och spola om vi når gränsen, trycker mellanslag, ELLER om inga fler tangenter väntar
                     if (queue_len >= RENDER_THRESHOLD || c == ' ' || !more_keys_waiting) {
                         editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
                     }
                 }
 
-                // Hantera automatisk radbrytning
                 if (*cursor_col >= MAX_COLS) {
-                    // Spola ut eventuella tecken innan vi bryter raden
                     editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
                     word_wrap(text_buffer, cursor_row, cursor_col, target_addr);
                 }
@@ -343,7 +280,6 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             break;
     }
 
-    // Hoppa upp (Jump) om vi når botten av den definierade skrivytan[cite: 1, 2]
     if (*cursor_row >= MAX_ROWS) {
         display_jump(text_buffer, cursor_row, cursor_col, target_addr);
     }
@@ -362,20 +298,12 @@ void editor_flush_queue(char *text_buffer, int cursor_row, int cursor_col, UDOUB
         int px = get_physical_x(pending_start_col);
         int py = get_physical_y(cursor_row);
 
-        // Ett enda SPI-anrop för hela kön
         render_stitched_text(temp_str, px, py, target_addr);
     }
-
-    // Nollställ kön
     pending_start_col = -1;
 }
 
-// ==========================================
-// HUVUDLOGIK
-// ==========================================
 void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting) {
-
-    // Vi är bara intresserade av tangenttryckningar
     if (ev->type != EV_KEY) return;
 
     int key_code = ev->code;
@@ -385,19 +313,15 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
         case STATE_EDITING:
             if (key_code == KEY_ESC && just_created_new_file) {
-                // Återgå till föregående fil[cite: 2]
                 strncpy(current_filename, previous_filename, sizeof(current_filename));
                 filename_len = strlen(current_filename);
 
-                // Vi gör ett temporärt anrop till din platshållare.
-                // Denna kommer fyllas med riktig logik i nästa steg.
                 load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
                 just_created_new_file = false;
                 hide_status_bar_and_redraw(target_addr);
                 break;
             }
 
-            // Om du börjar skriva (vilket som helst tecken förutom Esc), avbryts ångra-läget
             if (c > 0 && just_created_new_file) {
                 just_created_new_file = false;
                 hide_status_bar_and_redraw(target_addr);
@@ -418,13 +342,11 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_F3) {
-                // 1. Skanna mappen för att få en färsk lista
                 scan_directory_for_files();
 
                 if (total_files_found > 0) {
-                    previous_file_index = 0; // Om vi ångrar oss vill vi tillbaka till filen vi var i
+                    previous_file_index = 0;
 
-                    // Om vi redan befinner oss i en fil, hoppa till NÄSTA fil i listan direkt
                     if (strlen(current_filename) > 0) {
                         current_file_index = 1 % total_files_found;
                     }
@@ -434,33 +356,24 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_F4) {
-                // 1. Spara nuvarande fil säkert innan vi rensar[cite: 1]
                 if (strlen(current_filename) > 0) {
                     save_document_to_file(current_filename);
-                    // Spara undan namnet så vi kan ångra oss med Esc[cite: 2]
                     strncpy(previous_filename, current_filename, sizeof(previous_filename));
                 }
 
-                // 2. Töm den underliggande datamodellen
                 model_init();
 
-                // 3. Rensa skärmbufferten och återställ markören
                 memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
                 *cursor_row = JUMP_LINES;
                 *cursor_col = 0;
 
-                // 4. Nollställ det aktuella filnamnet och flagga för "ångra"-möjligheten
                 clear_filename_buffer();
                 just_created_new_file = true;
 
-                // 5. Rita upp den tomma skärmen (Rensar det gamla dokumentet fysiskt)
                 stitch_and_render_screen(text_buffer, target_addr);
-
-                // 6. Informera användaren i statusraden[cite: 2]
                 render_status_bar("Ny fil. (Tryck Esc för att återgå)", target_addr);
             }
             else {
-                // Standard textinmatning skickas till redigeringsmotorn
                 if (c > 0) {
                     process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
                 }
@@ -484,26 +397,21 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_EDITING;
             }
             else if (c == '\n') {
-                // Användaren trycker Enter för att välja filen i statusraden
                 hide_status_bar_and_redraw(target_addr);
 
-                // Kopiera in det valda namnet från listan
                 snprintf(current_filename, sizeof(current_filename), "%s", file_list[current_file_index].filename);
                 filename_len = strlen(current_filename);
 
-                // Ladda in filen från SD-kortet till RAM och skärm[cite: 2]
                 load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
 
                 current_state = STATE_EDITING;
             }
             else if (c > 0) {
-                // Omvänd logik: Användaren ångrar filbytet genom att bara börja skriva
                 hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
                 process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
             }
             break;
-
 
         case STATE_NAMING_FILE:
             if (c > 0) {
@@ -544,28 +452,23 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             break;
         case STATE_CONFIRM_OVERWRITE:
             if (c == 'j' || c == 'J') {
-                // Skriv över filen
                 save_to_sd(current_filename, target_addr);
                 hide_status_bar_and_redraw(target_addr);
                 current_state = STATE_EDITING;
             }
             else if (c == 'n' || c == 'N') {
-                // Avbryt överskrivning och återgå till namnredigering
                 update_status_bar_visuals(target_addr);
                 current_state = STATE_NAMING_FILE;
             }
             break;
 
-            // Felsökningsutskrift till terminalen
             if (c == '\n') {
                 putchar('\n');
             } else if (c == 127) {
-                // Backspace i terminalen (flytta markör bakåt, skriv över med mellanslag, flytta bakåt igen)
                 printf("\b \b");
             } else if (c >= 32 && c <= 126) {
                 putchar(c);
             }
-            // stdout är radbuffrad som standard, så vi tvingar fram utskriften
             fflush(stdout);
     }
 }
