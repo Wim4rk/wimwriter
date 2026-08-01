@@ -202,14 +202,40 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
             if (keyboard_is_ctrl_pressed()) {
                 int start_col = *cursor_col;
 
-                // 1. Hoppa över eventuella mellanslag precis bakom markören först
-                while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) == ' ') {
-                    start_col--;
+                int r = *cursor_row;
+                int c = *cursor_col;
+
+                // 1. Hoppa över eventuella mellanslag bakåt (även över radbrytningar)
+                while (r > 0 || c > 0) {
+                    // Beräkna koordinaterna för tecknet precis bakom nuvarande position
+                    int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
+                    int prev_r = (c == 0) ? r - 1 : r;
+
+                    // Om tecknet INTE är ett mellanslag har vi nått slutet på ett ord, avbryt
+                    if (BUF_AT(text_buffer, prev_r, prev_c) != ' ') {
+                        break;
+                    }
+
+                    // Annars, flytta markören bakåt och fortsätt leta
+                    c = prev_c;
+                    r = prev_r;
                 }
 
-                // 2. Leta därefter bakåt tills vi hittar nästa mellanslag (för att hitta ordets början)
-                while (start_col > 0 && BUF_AT(text_buffer, *cursor_row, start_col - 1) != ' ') {
-                    start_col--;
+                int words_start_row = r;
+                int words_start_col = c;
+
+                // 2. Leta bakåt tills vi hittar nästa mellanslag (för att hitta ordets början)
+                while (r > 0 || c > 0) {
+                    int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
+                    int prev_r = (c == 0) ? r - 1 : r;
+
+                    // Om tecknet ÄR ett mellanslag har vi hittat början på ordet, avbryt
+                    if (BUF_AT(text_buffer, prev_r, prev_c) == ' ') {
+                        break;
+                    }
+
+                    c = prev_c;
+                    r = prev_r;
                 }
 
                 int word_len = *cursor_col - start_col;

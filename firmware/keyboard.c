@@ -4,7 +4,8 @@
 #include <stdio.h>
 
 // Håll koll på modifier-tangenter
-static bool shift_pressed = false;
+static bool left_shift_pressed = false;
+static bool right_shift_pressed = false;
 static bool caps_locked = false;
 static bool ctrl_pressed = false;
 static bool altgr_pressed = false;
@@ -78,9 +79,13 @@ bool keyboard_is_ctrl_pressed(void) {
 }
 
 char keyboard_get_char(struct input_event *ev) {
-    // Uppdatera modifiers oavsett om det är ned- eller uppsläpp
-    if (ev->code == KEY_LEFTSHIFT || ev->code == KEY_RIGHTSHIFT) {
-        shift_pressed = (ev->value == 1 || ev->value == 2);
+    // Hantera shift-tangenterna
+    if (ev->code == KEY_LEFTSHIFT) {
+        left_shift_pressed = (ev->value == 1 || ev->value == 2);
+        return 0;
+    }
+    if (ev->code == KEY_RIGHTSHIFT) {
+        right_shift_pressed = (ev->value == 1 || ev->value == 2);
         return 0;
     }
 
@@ -109,7 +114,8 @@ char keyboard_get_char(struct input_event *ev) {
             bool is_letter = (default_char >= 'a' && default_char <= 'z') ||
                                 default_char == (char)0xE5 || default_char == (char)0xE4 || default_char == (char)0xF6;
 
-            bool use_shift = shift_pressed;
+            bool use_shift = left_shift_pressed || right_shift_pressed;
+
             if (caps_locked && is_letter) {
                 use_shift = !use_shift;
             }
