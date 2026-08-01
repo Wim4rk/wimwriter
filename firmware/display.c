@@ -91,7 +91,7 @@ void init_glyph_cache(void) {
     // 2. Testar med Latin-1 tecken
     for (int c = 32; c < 256; c++) {
         // Hämta startadressen för det enskilda tecknet i fontens rådata
-        const uint8_t* source_glyph = wim_font_24x43 + (c * FONT_24X43_BYTES);
+        const uint8_t* source_glyph = (const uint8_t*)wim_font_24x43 + (c * FONT_24X43_BYTES);
 
         for (int i = 0; i < FONT_24X43_BYTES; i++) {
             pre_flipped_glyphs[c][i] = source_glyph[FONT_24X43_BYTES - 1 - i];
@@ -124,7 +124,7 @@ int get_physical_x(int col) {
 
 int get_physical_y(int row) {
     // Vänder på Y (Justerar för statiskt radavstånd)
-    return SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * ROW_HEIGHT) + LINE_LINE_SPACING_PX;
+    return SCREEN_HEIGHT - MARGIN_TOP - ((row + 1) * ROW_HEIGHT) + LINE_SPACING_PX;
 }
 
 void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
