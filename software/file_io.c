@@ -8,11 +8,32 @@
 #include <sys/stat.h>
 
 static void get_full_path(const char *filename, char *full_path, size_t max_len) {
-    const char *home = getenv("HOME");
-    if (home == NULL) {
-        home = "/home/olov"; // Fallback om HOME saknas
+    const char *home_dir = NULL;
+    const char *sudo_user = getenv("SUDO_USER");
+
+    if (sudo_user != NULL) {
+        // Hämta hemkatalogen för den användare som anropade sudo
+        struct passwd *pw = getpwnam(sudo_user);
+        if (pw != NULL) {
+            home_dir = pw->pw_dir;
+        }
+    } else {
+        // Om programmet körs utan sudo, hämta aktuell användares hemkatalog
+        struct passwd *pw = getpwuid(getuid());
+        if (pw != NULL) {
+            home_dir = pw->pw_dir;
+        } else {
+            home_dir = getenv("HOME");
+        }
     }
-    snprintf(full_path, max_len, "%s/Dokument/writer/%s", home, filename);
+
+    if (home_dir != NULL) {
+        snprintf(full_path, max_len, "%s/Dokument/writer/%s", home_dir, filename);
+    } else {
+        // Fallback om systemanropen av någon anledning misslyckas
+        // Sparar då filen i den aktuella arbetskatalogen
+        snprintf(full_path, max_len, "%s", filename);
+    }
 }
 
 static FILE *temp_file = NULL;
