@@ -4,22 +4,40 @@
 #include "../firmware/display.h"
 #include "model.h"
 
+#include <stdlib.h>
+#include <sys/stat.h>
+
+static void get_full_path(const char *filename, char *full_path, size_t max_len) {
+    const char *home = getenv("HOME");
+    if (home == NULL) {
+        home = "/home/olov"; // Fallback om HOME saknas
+    }
+    snprintf(full_path, max_len, "%s/Dokument/writer/%s", home, filename);
+}
+
 static FILE *temp_file = NULL;
 
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // 1. Töm hela skärmbufferten i RAM
-    memset(buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
+    char filepath[512];
+    get_full_path(filename, filepath, sizeof(filepath));
 
-    // 2. Nollställ datamodellen
+    memset(buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
     model_init();
 
-    // 3. Fyll GapBuffern med data från filen
-    FILE *file = fopen(filename, "r");
+    FILE *file = fopen(filepath, "r");
     if (file != NULL) {
         int ch;
         while ((ch = fgetc(file)) != EOF) {
-            // Endast utskrivbara tecken och radbrytningar
-            if ((ch >= 32 && ch <= 126) || ch == '\n') {
+            // Identifiera starten på ett svenskt UTF-8-tecken
+            if (ch == 0xC3) {
+                int next_ch = fgetc(file);
+                if (next_ch == 0xA5) model_insert_char(0xE5);      // å
+                else if (next_ch == 0xA4) model_insert_char(0xE4); // ä
+                else if (next_ch == 0xB6) model_insert_char(0xF6); // ö
+                else if (next_ch == 0x85) model_insert_char(0xC5); // Å
+                else if (next_ch == 0x84) model_insert_char(0xC4); // Ä
+                else if (next_ch == 0x96) model_insert_char(0xD6); // Ö
+            } else if ((ch >= 32 && ch <= 126) || ch == '\n') {
                 model_insert_char((char)ch);
             }
         }
@@ -121,6 +139,34 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
     stitch_and_render_screen(buffer, target_addr);
 }
 
+void save_document_to_file(const char *filename) {
+    char filepath[512];
+    get_full_path(filename, filepath, sizeof(filepath));
+
+    FILE *file = fopen(filepath, "w");
+    if (file == NULL) {
+        return; // Tips: Här kan vi lägga till en utskrift i statusraden om fel
+    }
+
+    int doc_length = model_get_text_length();
+
+    for (int i = 0; i < doc_length; i++) {
+        unsigned char ch = (unsigned char)model_char_at(i);
+
+        // Översätt intern Latin-1 till UTF-8
+        if (ch == 0xE5) { fputc(0xC3, file); fputc(0xA5, file); }      // å
+        else if (ch == 0xE4) { fputc(0xC3, file); fputc(0xA4, file); } // ä
+        else if (ch == 0xF6) { fputc(0xC3, file); fputc(0xB6, file); } // ö
+        else if (ch == 0xC5) { fputc(0xC3, file); fputc(0x85, file); } // Å
+        else if (ch == 0xC4) { fputc(0xC3, file); fputc(0x84, file); } // Ä
+        else if (ch == 0xD6) { fputc(0xC3, file); fputc(0x96, file); } // Ö
+        else if (ch >= 32 || ch == '\n') {
+            fputc(ch, file); // Standard ASCII
+        }
+    }
+    fclose(file);
+}
+
 void append_to_temp_file(char c) {
     if (temp_file == NULL) {
         // Öppna i append-läge. Dold fil.
@@ -138,24 +184,4 @@ void append_to_temp_file(char c) {
         // OBS: Undvik fflush(temp_file) här för att låta Linux sköta cachen
         // asynkront och därmed skona ARMv6-processorn från blockeringar.
     }
-}
-
-void save_document_to_file(const char *filename) {
-    FILE *file = fopen(filename, "w");
-    if (file == NULL) {
-        return; // Felhantering för filåtkomst kan adderas här
-    }
-
-    int doc_length = model_get_text_length();
-
-    for (int i = 0; i < doc_length; i++) {
-        char ch = model_char_at(i);
-
-        // Skriv endast giltiga tecken samt radbrytningar
-        if ((unsigned char)ch >= 32 || ch == '\n') {
-            fputc(ch, file);
-        }
-    }
-
-    fclose(file);
 }

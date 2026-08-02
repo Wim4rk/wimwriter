@@ -95,16 +95,25 @@ static void scan_directory_for_files(void) {
     DIR *d;
     struct dirent *dir;
     struct stat file_stat;
+    char dir_path[512];
+
+    const char *home = getenv("HOME");
+    if (!home) home = "/home/olov";
+    snprintf(dir_path, sizeof(dir_path), "%s/Dokument/writer", home);
 
     total_files_found = 0;
     current_file_index = 0;
 
-    d = opendir(".");
+    d = opendir(dir_path);
     if (d) {
         while ((dir = readdir(d)) != NULL && total_files_found < MAX_FILES_IN_DIR) {
             if (dir->d_name[0] != '.') {
                 if (strstr(dir->d_name, ".txt") != NULL || strstr(dir->d_name, ".md") != NULL) {
-                    if (stat(dir->d_name, &file_stat) == 0) {
+                    // Vi måste bygga hela sökvägen för att stat() ska fungera
+                    char full_path[1024];
+                    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, dir->d_name);
+
+                    if (stat(full_path, &file_stat) == 0) {
                         snprintf(file_list[total_files_found].filename, sizeof(file_list[total_files_found].filename), "%s", dir->d_name);
                         file_list[total_files_found].last_modified = file_stat.st_mtime;
                         total_files_found++;
