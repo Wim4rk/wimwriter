@@ -56,7 +56,7 @@ extern uint8_t full_screen_buffer[];
 // ---------------------------------------------------------
 void init_display(UDOUBLE *target_addr);
 void cleanup_display(void);
-void refresh_display_full(void); // Kör INIT (Mode 0) via F5
+void refresh_display_full(char *buffer, UDOUBLE target_addr); // F5
 
 // ---------------------------------------------------------
 // Renderingsfunktioner (SPI-överföring till IT8951)

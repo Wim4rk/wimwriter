@@ -388,6 +388,9 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 stitch_and_render_screen(text_buffer, target_addr);
                 render_status_bar("Ny fil. (Tryck Esc för att återgå)", target_addr);
             }
+            else if (key_code == KEY_F5) {
+                refresh_display_full(text_buffer, target_addr);
+            }
             else {
                 if (c > 0) {
                     process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);

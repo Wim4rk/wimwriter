@@ -404,3 +404,36 @@ void hide_status_bar_and_redraw(UDOUBLE target_addr) {
         status_bar_visible = false;
     }
 }
+
+void refresh_display_full(char *buffer, UDOUBLE target_addr) {
+    // 1. Fyll skärmbufferten med vitt (0xFF)
+    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+
+    // 2. Skicka vit skärm i INIT-läge (Mode 0) för att rensa all ghosting.
+    // Detta får skärmen att blinka till ordentligt och nollställa pigmenten.
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 0);
+
+    // 3. Bygg upp skärmens faktiska innehåll i RAM
+    for (int i = 0; i < MAX_ROWS * MAX_COLS; i++) {
+        char c = buffer[i];
+        if (c == ' ' || c == '\0') continue;
+
+        int row = i / MAX_COLS;
+        int col = i % MAX_COLS;
+
+        // Använd dina befintliga hjälpfunktioner för fysisk rotation
+        int px = get_physical_x(col);
+        int py = get_physical_y(row);
+
+        const UBYTE *glyph = pre_flipped_glyphs[(unsigned char)c];
+
+        for (int h = 0; h < FONT_H; h++) {
+            memcpy(&full_screen_buffer[(py + h) * SCREEN_WIDTH + px],
+                   &glyph[h * FONT_W],
+                   FONT_W);
+        }
+    }
+
+    // 4. Rita ut texten i GC16-läge (Mode 2) för maximal skärpa
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 2);
+}
