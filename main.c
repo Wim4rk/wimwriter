@@ -88,6 +88,13 @@ int main() {
                 prompt_visible = true;
 
                 // TODO: Eventuellt trigga spolning till temp-fil här
+
+                if (status_bar_visible) {
+                    time_t current_time = time(NULL);
+                    if (difftime(current_time, status_bar_timestamp) >= 8.0) {
+                        hide_status_bar_and_redraw(target_addr);
+                    }
+                }
             }
         } else if (nfds > 0) {
             current_idle_ticks = 0;

@@ -297,12 +297,42 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     int physical_h = MARGIN_BOTTOM; // 68 pixlar enligt din layout
     int physical_y = 0; // Fysiskt högst upp på skärmen
 
+    status_bar_timestamp = time(NULL);
+    status_bar_visible = true;
+
     // Statisk buffert för hela statusraden (1448 x 68 pixlar)
     // Undviker malloc och skonar processorn
     static UBYTE status_buffer[SCREEN_WIDTH * MARGIN_BOTTOM];
 
     // Fyll hela ytan med vitt. Detta ersätter behovet av clear_area()
     memset(status_buffer, 0xFF, sizeof(status_buffer));
+
+    // Rita ett 2 pixlar tjockt horisontellt streck.
+    // Fysiskt y=66 och y=67 hamnar visuellt som ett streck precis ovanför texten.
+    int line_y = MARGIN_BOTTOM - 2;
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+        status_buffer[line_y * SCREEN_WIDTH + x] = 0x00;
+        status_buffer[(line_y + 1) * SCREEN_WIDTH + x] = 0x00;
+    }
+
+    if (is_wifi_active) {
+        const char *wifi_text = "WiFi";
+        // Eftersom skärmen är fysiskt roterad 180 grader, är den visuella högerkanten
+        // den fysiska vänsterkanten. X-koordinaten måste justeras för detta.
+        int wifi_physical_x = FONT_W * strlen(wifi_text); // Fysisk X börjar nära 0
+
+        for (int i = 0; wifi_text[i] != '\0' && wifi_physical_x >= 0; i++) {
+            unsigned char uc = (unsigned char)wifi_text[i];
+            const UBYTE *glyph = pre_flipped_glyphs[uc];
+
+            for (int h = 0; h < FONT_H; h++) {
+                memcpy(&status_buffer[h * physical_w + wifi_physical_x],
+                        &glyph[h * FONT_W],
+                        FONT_W);
+            }
+            wifi_physical_x -= FONT_W; // Stega fysiskt vänster (visuellt höger)
+        }
+    }
 
     // Fysisk X-koordinat börjar i högerkant (din visuella vänsterkant)
     int physical_x = SCREEN_WIDTH - FONT_W;
@@ -356,4 +386,21 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     }
 
     send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
+}
+
+void hide_status_bar_and_redraw(UDOUBLE target_addr) {
+    if (!status_bar_visible) return;
+
+    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
+
+    if (is_wifi_active) {
+        // Om WiFi är aktivt, rensa *inte* hela raden, utan skriv över
+        // allting utom "WiFi"-texten.
+        // Detta kan hanteras genom att kalla på render_status_bar med en tom sträng.
+        render_status_bar("", target_addr);
+    } else {
+        // Om WiFi är avstängt, rensa hela ytan och sätt flaggan till false
+        clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
+        status_bar_visible = false;
+    }
 }

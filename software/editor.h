@@ -14,6 +14,7 @@ typedef enum {
     STATE_CONFIRM_OVERWRITE
 } EditorState;
 
+extern bool is_wifi_active;
 // Gör tillståndet tillgängligt vid behov
 extern EditorState current_state;
 

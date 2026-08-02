@@ -9,6 +9,12 @@
 #include "../firmware/keyboard.h"
 #include "model.h"
 
+
+static bool status_bar_visible = false;
+static time_t status_bar_timestamp = 0;
+
+bool is_wifi_active = false;
+
 EditorState current_state = STATE_EDITING;
 
 #define RENDER_THRESHOLD 8
