@@ -96,6 +96,26 @@ En *manual override* som låter dig slå på/av WiFi, till exempel för administ
 
 * Dynamiska data som skrivpromptens exakta position, när senaste backup gjordes, samt exakt vad som finns i skärmbufferten sparas undan när maskinen stängs av, eller filen växlas.
 
+## Svenska tecken i utdata
+
+### Hexadecimala Escape Sequences
+
+För att använda svenska tecken i gränssnittet utan att introducera en beräkningstung UTF-8-parser, kan du "lura" kompilatorn. Genom att infoga de exakta hexadecimala värdena från din Latin-1-uppsättning direkt in i strängarna, garanterar du att renderingsmotorn bara får en enda, korrekt byte per tecken.
+
+Exempelvis:
+
+const char *lines[] = {
+    "F1  - Denna hj\xE4lpruta",     // \xE4 = ä
+    "F2  - Spara manuellt",
+    "F3  - \xD6ppna / Byt fil",     // \xD6 = Ö
+    "F4  - Ny fil",
+    "F5  - Uppdatera sk\xE4rm",     // \xE4 = ä
+    "F9  - Synkronisera mot NAS",
+    "F10 - WiFi P\xE5/Av",          // \xE5 = å
+    "",
+    "Esc - \xC5terg\xE5"            // \xC5 = Å, \xE5 = å
+};
+
 ---
 
 ## Nedprioriterade funktioner

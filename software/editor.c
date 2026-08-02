@@ -39,8 +39,71 @@ typedef struct {
 static FileEntry file_list[MAX_FILES_IN_DIR];
 static int total_files_found = 0;
 
-static void show_help_box(void) {}
-static void hide_help_box_and_redraw(void) {}
+static void show_help_box(UDOUBLE target_addr) {
+    int box_w = 700;
+    int box_h = 500;
+
+    // Centrera rutan fysiskt på skärmen
+    int phys_x = (SCREEN_WIDTH - box_w) / 2;
+    int phys_y = (SCREEN_HEIGHT - box_h) / 2;
+
+    // Statisk allokering för att spara cykler och minne på ARMv6
+    static UBYTE help_buffer[700 * 500];
+
+    // 1. Fyll hela ytan med svart (skapar ramen på 2px)
+    memset(help_buffer, 0x00, sizeof(help_buffer));
+
+    // 2. Fyll insidan med vitt (0xFF)
+    for (int y = 2; y < box_h - 2; y++) {
+        memset(&help_buffer[y * box_w + 2], 0xFF, box_w - 4);
+    }
+
+    // Listan med funktionsknappar från specifikationen
+    const char *lines[] = {
+        "F1  - Denna hj\xE4lpruta",     // \xE4 = ä
+        "F2  - Spara manuellt",
+        "F3  - \xD6ppna / Byt fil",     // \xD6 = Ö
+        "F4  - Ny fil",
+        "F5  - Uppdatera sk\xE4rm",     // \xE4 = ä
+        "F9  - Synkronisera mot NAS",
+        "F10 - WiFi P\xE5/Av",          // \xE5 = å
+        "",
+        "Esc - \xC5terg\xE5"            // \xC5 = Å, \xE5 = å
+    };
+    int num_lines = sizeof(lines) / sizeof(lines[0]);
+
+    // Visuell överkant är fysisk nederkant i bufferten
+    int start_local_y = box_h - FONT_H - 40;
+
+    for (int i = 0; i < num_lines; i++) {
+        int len = strlen(lines[i]);
+
+        // Visuell vänsterkant är fysisk högerkant i bufferten
+        int current_local_x = box_w - 40 - FONT_W;
+
+        for (int c = 0; c < len; c++) {
+            unsigned char uc = (unsigned char)lines[i][c];
+            if (uc >= 32) {
+                const UBYTE *glyph = pre_flipped_glyphs[uc];
+                for (int h = 0; h < FONT_H; h++) {
+                    memcpy(&help_buffer[(start_local_y + h) * box_w + current_local_x],
+                           &glyph[h * FONT_W],
+                           FONT_W);
+                }
+            }
+            // Stega fysiskt åt vänster för nästa tecken
+            current_local_x -= FONT_W;
+        }
+        // Stega fysiskt nedåt i bufferten för nästa textrad
+        start_local_y -= (FONT_H + 15);
+    }
+}
+
+static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
+    // Ritar om skärmen baserat på den underliggande textbufferten
+    // vilket effektivt skriver över hjälprutan.
+    stitch_and_render_screen(text_buffer, target_addr);
+}
 
 static void save_to_sd(const char *filename, UDOUBLE target_addr) {
     save_document_to_file(filename);
@@ -343,7 +406,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             }
 
             if (key_code == KEY_F1) {
-                show_help_box();
+                show_help_box(target_addr);
                 current_state = STATE_HELP;
             }
             else if (key_code == KEY_F2) {
@@ -413,7 +476,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
         case STATE_HELP:
             if (key_code == KEY_ESC) {
-                hide_help_box_and_redraw();
+                hide_help_box_and_redraw(text_buffer, target_addr);
                 current_state = STATE_EDITING;
             }
             break;
