@@ -391,6 +391,19 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             else if (key_code == KEY_F5) {
                 refresh_display_full(text_buffer, target_addr);
             }
+            else if (key_code == KEY_F10) {
+                toggle_wifi();
+
+                if (is_wifi_active) {
+                    // Om WiFi precis slogs på, tvinga fram statusraden.
+                    // Ett tomt textfält uppdaterar raden, och renderingsmotorn
+                    // läser av is_wifi_active för att rita in "WiFi" längst till höger.
+                    render_status_bar("", target_addr);
+                } else {
+                    // Om WiFi stängdes av, städa undan raden omedelbart (om inget annat visas).
+                    hide_status_bar_and_redraw(target_addr);
+                }
+            }
             else {
                 if (c > 0) {
                     process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
