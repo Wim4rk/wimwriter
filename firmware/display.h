@@ -82,6 +82,8 @@ void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE 
 
 void hide_status_bar_and_redraw(UDOUBLE target_addr);
 
+void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr, int update_mode);
+
 extern UBYTE pre_flipped_glyphs[256][2048];
 
 // Makro för att räkna ut rätt index i RAM
