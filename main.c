@@ -50,6 +50,7 @@ int main() {
     printf("Rensar buffer...\n");
 
     clear_buffer();
+    model_init();
 
     // Startkoordinater anpassade efter jump-logiken
     int cursor_col = 0;
