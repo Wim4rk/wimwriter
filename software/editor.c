@@ -7,6 +7,8 @@
 #include "editor.h"
 #include "file_io.h"
 #include "../firmware/keyboard.h"
+#include "../firmware/display.h"
+#include "sync.h"
 #include "model.h"
 
 

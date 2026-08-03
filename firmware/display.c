@@ -15,7 +15,7 @@ void init_glyph_cache(void);
 uint8_t full_screen_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 
 // Cache för färdigvända tecken - spara beräkning under skrivning
-static UBYTE pre_flipped_glyphs[256][2048];
+UBYTE pre_flipped_glyphs[256][2048];
 
 // Ny funktion: Skriver enbart data till IT8951:s interna minne via SPI (Tyst överföring)
 void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE target_addr) {
