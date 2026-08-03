@@ -99,6 +99,8 @@ static void show_help_box(UDOUBLE target_addr) {
         // Stega fysiskt nedåt i bufferten för nästa textrad
         start_local_y -= (FONT_H + 15);
     }
+
+    send_and_display_buffer(help_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
 }
 
 static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
