@@ -10,7 +10,8 @@
 
 #include "firmware/display.h"
 #include "firmware/keyboard.h"
-#include "software/editor.h" // Inkludera vår nya tillståndsmaskin
+#include "software/editor.h"
+#include "software/model.h"
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
 #define MAX_EVENTS 5
