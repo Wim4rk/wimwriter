@@ -1,6 +1,9 @@
-#include "file_io.h"
+#include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include "file_io.h"
 #include "../firmware/display.h"
 #include "model.h"
 

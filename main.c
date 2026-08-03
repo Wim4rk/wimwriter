@@ -6,6 +6,7 @@
 #include <sys/epoll.h> // Krävs för asynkron inmatning
 #include <fcntl.h>
 #include <string.h>
+#include <time.h>
 
 #include "firmware/display.h"
 #include "firmware/keyboard.h"

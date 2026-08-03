@@ -1,6 +1,7 @@
 #include "wim_fonts.h"
 
 // Genererad med dimensionerna W:24 H:43
+// Denna rad bara för att Git ska anta att filen är ändrad
 const uint8_t wim_font_24x43[256][1032] = {
     // Index 0x00 (' ')
     {

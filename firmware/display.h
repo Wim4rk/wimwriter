@@ -80,6 +80,8 @@ void display_jump(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr);
 void render_stitched_text(const char *text, int visual_x, int visual_y, UDOUBLE target_addr);
 
+void hide_status_bar_and_redraw(UDOUBLE target_addr);
+
 // Makro för att räkna ut rätt index i RAM
 #define BUF_AT(buf, r, c) buf[((r) * MAX_COLS) + (c)]
 

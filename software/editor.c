@@ -10,8 +10,8 @@
 #include "model.h"
 
 
-static bool status_bar_visible = false;
-static time_t status_bar_timestamp = 0;
+bool status_bar_visible = false;
+time_t status_bar_timestamp = 0;
 
 bool is_wifi_active = false;
 
@@ -111,11 +111,6 @@ static void save_to_sd(const char *filename, UDOUBLE target_addr) {
     char status_text[300];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
-}
-
-static void hide_status_bar_and_redraw(UDOUBLE target_addr) {
-    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
-    clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
 }
 
 static void update_status_bar_visuals(UDOUBLE target_addr) {

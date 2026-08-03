@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "display.h"
 #include "wim_fonts.h"
 #include "DEV_Config.h"
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
+#include "../software/editor.h"
 
 extern void EPD_IT8951_ReadBusy(void);
 
