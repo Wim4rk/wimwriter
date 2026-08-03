@@ -197,6 +197,22 @@ static void scan_directory_for_files(void) {
     }
 }
 
+void open_latest_file(char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    scan_directory_for_files();
+
+    if (total_files_found > 0) {
+        snprintf(current_filename, sizeof(current_filename), "%s", file_list[0].filename);
+        filename_len = strlen(current_filename);
+
+        load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+    } else {
+        clear_filename_buffer();
+        just_created_new_file = true;
+
+        render_status_bar("Ny fil. Spara med F2.", target_addr);
+    }
+}
+
 static void show_file_in_status_bar(UDOUBLE target_addr) {
     if (total_files_found == 0) return;
 
