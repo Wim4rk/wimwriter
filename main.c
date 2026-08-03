@@ -81,6 +81,15 @@ int main() {
             // Spola kön!
             editor_flush_queue(text_buffer, cursor_row, cursor_col, target_addr);
 
+            // 1. UTSTÄDAD KONTROLL FÖR STATUSRADEN
+            if (status_bar_visible) {
+                time_t current_time = time(NULL);
+                if (difftime(current_time, status_bar_timestamp) >= 8.0) {
+                    hide_status_bar_and_redraw(target_addr);
+                }
+            }
+
+            // 2. HANTERA PROMPTEN OBEROENDE AV STATUSRADEN
             current_idle_ticks++;
             if (current_idle_ticks >= prompt_delay_ticks && !prompt_visible) {
                 prompt_px = get_physical_x(cursor_col);
@@ -89,17 +98,9 @@ int main() {
                 // Rita ut understrecket i A2-läget
                 render_char('_', prompt_px, prompt_py, target_addr);
                 prompt_visible = true;
-
-                // TODO: Eventuellt trigga spolning till temp-fil här
-
-                if (status_bar_visible) {
-                    time_t current_time = time(NULL);
-                    if (difftime(current_time, status_bar_timestamp) >= 8.0) {
-                        hide_status_bar_and_redraw(target_addr);
-                    }
-                }
             }
-        } else if (nfds > 0) {
+        }
+        else if (nfds > 0) {
             current_idle_ticks = 0;
             for (int n = 0; n < nfds; n++) {
                 if (events[n].data.fd == kb_fd) {

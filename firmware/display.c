@@ -311,11 +311,12 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
 
     // Rita ett 2 pixlar tjockt horisontellt streck.
     // Fysiskt y=66 och y=67 hamnar visuellt som ett streck precis ovanför texten.
-    int line_y = MARGIN_BOTTOM - 2;
-    for (int x = 0; x < SCREEN_WIDTH; x++) {
-        status_buffer[line_y * SCREEN_WIDTH + x] = 0x00;
-        status_buffer[(line_y + 1) * SCREEN_WIDTH + x] = 0x00;
-    }
+    //
+    // int line_y = MARGIN_BOTTOM - 2;
+    // for (int x = 0; x < SCREEN_WIDTH; x++) {
+    //     status_buffer[line_y * SCREEN_WIDTH + x] = 0x00;
+    //     status_buffer[(line_y + 1) * SCREEN_WIDTH + x] = 0x00;
+    // }
 
     if (is_wifi_active) {
         const char *wifi_text = "WiFi";
@@ -342,6 +343,19 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     for (int i = 0; text[i] != '\0' && physical_x >= 0; i++) {
         unsigned char uc = (unsigned char)text[i];
 
+        // Fånga upp starten på ett svenskt UTF-8-tecken
+        if (uc == 0xC3 && text[i+1] != '\0') {
+            unsigned char next_ch = (unsigned char)text[i+1];
+            if (next_ch == 0xA5) uc = 0xE5;      // å
+            else if (next_ch == 0xA4) uc = 0xE4; // ä
+            else if (next_ch == 0xB6) uc = 0xF6; // ö
+            else if (next_ch == 0x85) uc = 0xC5; // Å
+            else if (next_ch == 0x84) uc = 0xC4; // Ä
+            else if (next_ch == 0x96) uc = 0xD6; // Ö
+
+            i++; // Hoppa manuellt över nästa byte i textsträngen
+        }
+
         // Hämta endast tecken vi kan skriva ut
         if (uc >= 32) {
             const UBYTE *glyph = pre_flipped_glyphs[uc];
@@ -349,8 +363,8 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
             // Kopiera in den roterade glyfen i vår statusbuffert
             for (int h = 0; h < FONT_H; h++) {
                 memcpy(&status_buffer[h * physical_w + physical_x],
-                       &glyph[h * FONT_W],
-                       FONT_W);
+                        &glyph[h * FONT_W],
+                        FONT_W);
             }
         }
 
