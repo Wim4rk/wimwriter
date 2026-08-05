@@ -401,18 +401,18 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
     send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
 }
 
+
 void hide_status_bar_and_redraw(UDOUBLE target_addr) {
     if (!status_bar_visible) return;
 
-    int start_y = SCREEN_HEIGHT - MARGIN_BOTTOM;
+    // Skärmen är roterad; den visuella underkanten ligger på fysisk y = 0
+    int start_y = 0;
 
     if (is_wifi_active) {
-        // Om WiFi är aktivt, rensa *inte* hela raden, utan skriv över
-        // allting utom "WiFi"-texten.
-        // Detta kan hanteras genom att kalla på render_status_bar med en tom sträng.
+        // Skriv över med tomt textfält om WiFi är igång
         render_status_bar("", target_addr);
     } else {
-        // Om WiFi är avstängt, rensa hela ytan och sätt flaggan till false
+        // Rensa rätt fysiska yta i kontrollerns RAM
         clear_area(0, start_y, SCREEN_WIDTH, MARGIN_BOTTOM, target_addr);
         status_bar_visible = false;
     }
