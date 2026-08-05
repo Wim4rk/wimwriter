@@ -299,9 +299,6 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     int physical_h = MARGIN_BOTTOM; // 68 pixlar enligt din layout
     int physical_y = 0; // Fysiskt högst upp på skärmen
 
-    status_bar_timestamp = time(NULL);
-    status_bar_visible = true;
-
     // Statisk buffert för hela statusraden (1448 x 68 pixlar)
     // Undviker malloc och skonar processorn
     static UBYTE status_buffer[SCREEN_WIDTH * MARGIN_BOTTOM];

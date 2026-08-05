@@ -146,7 +146,7 @@ static void clear_filename_buffer(void) {
 static void generate_default_filename(void){
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    snprintf(current_filename, sizeof(current_filename), "wim - %04d-%02d-%02d_%02d_%02d.txt",
+    snprintf(current_filename, sizeof(current_filename), "wim_%04d%02d%02d_%02d%02d.txt",
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
     filename_len = strlen(current_filename);
 }
@@ -230,6 +230,18 @@ static void show_next_file(UDOUBLE target_addr) {
     }
 
     show_file_in_status_bar(target_addr);
+}
+
+static const char* get_user_home_dir(void) {
+    const char *sudo_user = getenv("SUDO_USER");
+    if (sudo_user != NULL) {
+        struct passwd *pw = getpwnam(sudo_user);
+        if (pw != NULL) return pw->pw_dir;
+    } else {
+        struct passwd *pw = getpwuid(getuid());
+        if (pw != NULL) return pw->pw_dir;
+    }
+    return getenv("HOME");
 }
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
@@ -435,17 +447,21 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_F3) {
-                scan_directory_for_files();
+                if (strlen(current_filename) == 0) {
+                    is_suggested_name = true;
+                    generate_default_filename();
+                    update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
+                } else {
+                    save_to_sd(const char *filename, UDOUBLE target_addr);
 
-                if (total_files_found > 0) {
-                    previous_file_index = 0;
-
-                    if (strlen(current_filename) > 0) {
+                    scan_directory_for_files();
+                    if (total_files_found > 0) {
+                        previous_file_index = 0;
                         current_file_index = 1 % total_files_found;
+                        show_file_in_status_bar(target_addr);
+                        current_state = STATE_FILE_SWITCH;
                     }
-
-                    show_file_in_status_bar(target_addr);
-                    current_state = STATE_FILE_SWITCH;
                 }
             }
             else if (key_code == KEY_F4) {
