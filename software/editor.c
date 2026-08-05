@@ -161,6 +161,18 @@ static int compare_file_entries(const void *a, const void *b) {
     return 0;
 }
 
+static const char* get_user_home_dir(void) {
+    const char *sudo_user = getenv("SUDO_USER");
+    if (sudo_user != NULL) {
+        struct passwd *pw = getpwnam(sudo_user);
+        if (pw != NULL) return pw->pw_dir;
+    } else {
+        struct passwd *pw = getpwuid(getuid());
+        if (pw != NULL) return pw->pw_dir;
+    }
+    return getenv("HOME");
+}
+
 static void scan_directory_for_files(void) {
     DIR *d;
     struct dirent *dir;
@@ -234,17 +246,6 @@ static void show_next_file(UDOUBLE target_addr) {
     show_file_in_status_bar(target_addr);
 }
 
-static const char* get_user_home_dir(void) {
-    const char *sudo_user = getenv("SUDO_USER");
-    if (sudo_user != NULL) {
-        struct passwd *pw = getpwnam(sudo_user);
-        if (pw != NULL) return pw->pw_dir;
-    } else {
-        struct passwd *pw = getpwuid(getuid());
-        if (pw != NULL) return pw->pw_dir;
-    }
-    return getenv("HOME");
-}
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
