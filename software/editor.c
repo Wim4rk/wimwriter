@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include "editor.h"
 #include "file_io.h"
 #include "../firmware/keyboard.h"
@@ -165,8 +167,8 @@ static void scan_directory_for_files(void) {
     struct stat file_stat;
     char dir_path[512];
 
-    const char *home = getenv("HOME");
-    if (!home) home = "/home/olov";
+    const char *home = get_user_home_dir();
+    // Use fallback here?
     snprintf(dir_path, sizeof(dir_path), "%s/Dokument/writer", home);
 
     total_files_found = 0;
@@ -453,7 +455,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     update_status_bar_visuals(target_addr);
                     current_state = STATE_NAMING_FILE;
                 } else {
-                    save_to_sd(const char *filename, UDOUBLE target_addr);
+                    save_to_sd(current_filename, target_addr);
 
                     scan_directory_for_files();
                     if (total_files_found > 0) {
