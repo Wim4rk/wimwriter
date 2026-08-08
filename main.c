@@ -75,7 +75,7 @@ int main() {
     printf("Rensar buffer...\n");
 
     // För att testa:
-    dump_glyph_to_terminal('P');
+    dump_glyph_to_terminal('M');
 
     clear_buffer();
     model_init();
