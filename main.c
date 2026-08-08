@@ -57,6 +57,7 @@ int main() {
     int cursor_col = 0;
     int cursor_row = JUMP_LINES;
 
+    render_status_bar("Öppnar senaste fil...", target_addr);
     printf("Öppnar senaste fil...\n");
     open_latest_file(text_buffer, &cursor_row, &cursor_col, target_addr);
 
@@ -67,6 +68,7 @@ int main() {
     ev_epoll.data.fd = kb_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, kb_fd, &ev_epoll);
 
+    render_status_bar("Wimwriter redo!", target_addr);
     printf("WimWriter redo!\n");
 
     bool prompt_visible = false;
