@@ -70,7 +70,7 @@ void clear_area(int x, int y, int width, int height, UDOUBLE target_addr) {
     static bool buffer_initialized = false;
 
     if (!buffer_initialized) {
-        memset(white_buffer, 0xFF, sizeof(white_buffer)); // 0xFF är vitt i 8bpp
+        memset(white_buffer, 0xF0, sizeof(white_buffer)); // 0xF0 är vitt i 8bpp
         buffer_initialized = true;
     }
 
@@ -88,8 +88,8 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 // Funktionen bygger font-cachen i RAM.
 // Anropas inifrån set_active_font() (och indirekt vid uppstart).
 void init_glyph_cache(void) {
-    // 1. Rensa hela cachen. 0xFF motsvarar vitt i 8bpp.
-    memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
+    // 1. Rensa hela cachen. 0xF0 motsvarar vitt i 8bpp.
+    memset(pre_flipped_glyphs, 0xF0, sizeof(pre_flipped_glyphs));
 
     // 2. Bygg cachen för standard ASCII och Latin-1 (för å, ä, ö)[cite: 2].
     for (int c = 32; c < 256; c++) {
@@ -101,7 +101,7 @@ void init_glyph_cache(void) {
 
             // Tröskla värdet: Mörkare än 128 blir rent svart, resten vitt.
             // Detta åtgärdar problemet med ihåliga tecken[cite: 3].
-            pre_flipped_glyphs[c][i] = (pixel_val < 128) ? 0x00 : 0xFF;
+            pre_flipped_glyphs[c][i] = (pixel_val < 128) ? 0x00 : 0xF0;
         }
     }
 }
@@ -186,7 +186,7 @@ void render_rows_stitched(int start_row, int end_row, char *buffer, UDOUBLE targ
     // Bounding box för raderna (dimensionerad för max 2 rader med 64px font = 1448 x 128 px i RAM)
     // Bounding box för raderna (dimensionerad för max höjd inklusive extremt radavstånd = 1448 x 384 px i RAM)
     static UBYTE row_buffer[1448 * 384];
-    memset(row_buffer, 0xFF, physical_w * physical_h); // Fyll hela ytan med vitt
+    memset(row_buffer, 0xF0, physical_w * physical_h); // Fyll hela ytan med vitt
 
     // Rita in alla faktiska tecken från textbufferten in i denna nya vita låda
     for (int r = start_row; r <= end_row; r++) {
@@ -279,7 +279,7 @@ void render_stitched_text(const char *text, int physical_x, int physical_y, UDOU
 
     // Statisk RAM-buffert för att skona ARMv6
     static UBYTE stitch_buffer[1448 * 64];
-    memset(stitch_buffer, 0xFF, text_pixel_width * FONT_H);
+    memset(stitch_buffer, 0xF0, text_pixel_width * FONT_H);
 
     // Det första tecknet placeras högst upp i lokala X-koordinater inuti bufferten
     int current_local_x = text_pixel_width - FONT_W;
@@ -310,7 +310,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     static UBYTE status_buffer[SCREEN_WIDTH * MARGIN_BOTTOM];
 
     // Fyll hela ytan med vitt. Detta ersätter behovet av clear_area()
-    memset(status_buffer, 0xFF, sizeof(status_buffer));
+    memset(status_buffer, 0xF0, sizeof(status_buffer));
 
     // Rita ett 2 pixlar tjockt horisontellt streck.
     // Fysiskt y=66 och y=67 hamnar visuellt som ett streck precis ovanför texten.
@@ -384,7 +384,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
 }
 
 void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
-    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+    memset(full_screen_buffer, 0xF0, sizeof(full_screen_buffer));
 
     // Iterera över hela bufferten linjärt
     for (int i = 0; i < MAX_ROWS * MAX_COLS; i++) {
@@ -429,8 +429,8 @@ void hide_status_bar_and_redraw(UDOUBLE target_addr) {
 }
 
 void refresh_display_full(char *buffer, UDOUBLE target_addr) {
-    // 1. Fyll skärmbufferten med vitt (0xFF)
-    memset(full_screen_buffer, 0xFF, sizeof(full_screen_buffer));
+    // 1. Fyll skärmbufferten med vitt (0xF0)
+    memset(full_screen_buffer, 0xF0, sizeof(full_screen_buffer));
 
     // 2. Skicka vit skärm i INIT-läge (Mode 0) för att rensa all ghosting.
     // Detta får skärmen att blinka till ordentligt och nollställa pigmenten.

@@ -57,9 +57,9 @@ static void show_help_box(UDOUBLE target_addr) {
     // 1. Fyll hela ytan med svart (skapar ramen på 2px)
     memset(help_buffer, 0x00, sizeof(help_buffer));
 
-    // 2. Fyll insidan med vitt (0xFF)
+    // 2. Fyll insidan med vitt (0xF0)
     for (int y = 2; y < box_h - 2; y++) {
-        memset(&help_buffer[y * box_w + 2], 0xFF, box_w - 4);
+        memset(&help_buffer[y * box_w + 2], 0xF0, box_w - 4);
     }
 
     // Listan med funktionsknappar från specifikationen
