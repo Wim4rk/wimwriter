@@ -59,6 +59,8 @@ void send_and_display_buffer(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE 
     // 1. Skicka datan till minnet
     send_buffer_to_ram(buffer, x, y, w, h, target_addr);
 
+    // IT8951_A2_MODE
+
     // 2. Trigga utritningen
     EPD_IT8951_Display_Area(x, y, w, h, update_mode);
 }
