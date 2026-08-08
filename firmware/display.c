@@ -210,8 +210,8 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     int row_start = old_row * MAX_COLS;
     int break_col = *cursor_col - 1;
 
-    // Leta bakåt efter senaste mellanslaget
-    while (break_col > 0 && buffer[row_start + break_col] != ' ') {
+    // Leta bakåt efter senaste mellanslaget eller bindestrecket
+    while (break_col > 0 && buffer[row_start + break_col] != ' ' && buffer[row_start + break_col] != '-') {
         break_col--;
     }
 
