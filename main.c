@@ -33,6 +33,28 @@ static int set_nonblocking(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
+void dump_glyph_to_terminal(unsigned char uc) {
+    printf("Visualiserar tecken: %c (0x%02X)\n", uc, uc);
+
+    // Hämta arrayen för tecknet (justera variabelnamnet utifrån din fontfil)
+    const uint8_t *glyph = wim_font_24x43[uc];
+
+    // Iterera över rutans höjd och bredd
+    for (int y = 0; y < 43; y++) {
+        for (int x = 0; x < 24; x++) {
+            uint8_t pixel = glyph[y * 24 + x];
+
+            // 0x00 är svart pigment. Allt annat tolkar vi som vitt/bakgrund.
+            if (pixel == 0x00) {
+                printf("##");
+            } else {
+                printf("  ");
+            }
+        }
+        printf("\n");
+    }
+}
+
 int main() {
     UDOUBLE target_addr;
 
@@ -51,6 +73,9 @@ int main() {
     set_nonblocking(kb_fd);
 
     printf("Rensar buffer...\n");
+
+    // För att testa:
+    dump_glyph_to_terminal('P');
 
     clear_buffer();
     model_init();
