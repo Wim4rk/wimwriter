@@ -343,8 +343,12 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
                     (*cursor_row)--;
                     *cursor_col = MAX_COLS - 1;
 
-                    while (*cursor_col > 0 && BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0') {
+                    while (*cursor_col > 0 && (BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0' || BUF_AT(text_buffer, *cursor_row, *cursor_col) == ' ')) {
                         (*cursor_col)--;
+                    }
+
+                    if (*cursor_col < MAX_COLS - 1) {
+                        (*cursor_col)++;
                     }
                 } else {
                     break;
