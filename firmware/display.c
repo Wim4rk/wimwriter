@@ -88,21 +88,25 @@ void render_char(char c, int x, int y, UDOUBLE target_addr) {
 // Funktionen bygger font-cachen i RAM.
 // Anropas inifrån set_active_font() (och indirekt vid uppstart).
 void init_glyph_cache(void) {
-    // 1. Rensa hela cachen först (0xFF är vitt i 8bpp)
+    // Rensa hela cachen först (0xFF är vitt i 8bpp)
     memset(pre_flipped_glyphs, 0xFF, sizeof(pre_flipped_glyphs));
 
-    // 2. Testar med Latin-1 tecken
+    // Bygg cachen för tecken
     for (int c = 32; c < 256; c++) {
         // Hämta startadressen för det enskilda tecknet i fontens rådata
         const uint8_t* source_glyph = (const uint8_t*)wim_font_24x43 + (c * FONT_24X43_BYTES);
 
         for (int i = 0; i < FONT_24X43_BYTES; i++) {
-            // Tröskla värdet: mörkare än 128 blir rent svart (0x00), annars vitt (0xFF)
+            // 1. Deklarera och hämta pixelvärdet från källan, roterat
+            uint8_t pixel_val = source_glyph[FONT_24X43_BYTES - 1 - i];
+
+            // 2. Tröskla värdet för att garantera rena svarta (0x00) eller vita (0xFF) pixlar
             pre_flipped_glyphs[c][i] = (pixel_val < 128) ? 0x00 : 0xFF;
             // pre_flipped_glyphs[c][i] = source_glyph[FONT_24X43_BYTES - 1 - i];
         }
     }
 }
+
 
 void init_display(UDOUBLE *target_addr) {
     if (DEV_Module_Init() != 0) {
