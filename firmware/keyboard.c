@@ -38,8 +38,8 @@ static const char map_default[128] = {
     [KEY_SEMICOLON] = 0xF6,  // ö (246)
     [KEY_MINUS] = '+', [KEY_SLASH] = '-', [KEY_COMMA] = ',', [KEY_DOT] = '.',
     [KEY_BACKSLASH] = '\'',  // Knappen med ' och *
-    [KEY_RIGHTBRACE] = '¨',  // Knappen med ¨, ^ och ~
-    [KEY_EQUAL] = '´'        // Knappen med ´ och ` (till vänster om backspace)
+    [KEY_RIGHTBRACE] = 0xA8,  // ¨ i Latin-1
+    [KEY_EQUAL] = 0xB4,       // ´ i Latin-1
 };
 
 // Mappning för Shift/Caps Lock (versaler)
