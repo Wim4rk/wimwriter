@@ -411,7 +411,7 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         }
     }
 
-    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 2);
 }
 
 
@@ -460,5 +460,6 @@ void refresh_display_full(char *buffer, UDOUBLE target_addr) {
         }
     }
 
+    // Mode 0 är INIT-läge, 2 är GC16.
     send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 0);
 }
