@@ -435,7 +435,7 @@ void refresh_display_full(char *buffer, UDOUBLE target_addr) {
 
     // 2. Skicka vit skärm i INIT-läge (Mode 0) för att rensa all ghosting.
     // Detta får skärmen att blinka till ordentligt och nollställa pigmenten.
-    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 0);
+    // send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 0);
 
     // 3. Bygg upp skärmens faktiska innehåll i RAM
     for (int i = 0; i < MAX_ROWS * MAX_COLS; i++) {
