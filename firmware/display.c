@@ -7,6 +7,7 @@
 #include "fast_spi.h"
 #include "EPD_IT8951.h"
 #include "../software/editor.h"
+#include "sync.h"
 
 extern void EPD_IT8951_ReadBusy(void);
 
@@ -316,6 +317,7 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     //     status_buffer[line_y * SCREEN_WIDTH + x] = 0x00;
     //     status_buffer[(line_y + 1) * SCREEN_WIDTH + x] = 0x00;
     // }
+    is_wifi_active = get_actual_wifi_status();
 
     if (is_wifi_active) {
         const char *wifi_text = "WiFi";

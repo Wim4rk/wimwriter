@@ -2,5 +2,6 @@
 #define SYNC_H
 
 void toggle_wifi(void);
+bool get_actual_wifi_status(void);
 
 #endif

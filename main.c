@@ -12,6 +12,8 @@
 #include "firmware/keyboard.h"
 #include "software/editor.h"
 #include "software/model.h"
+#include "software/sync.h"
+
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
 #define MAX_EVENTS 5
@@ -68,14 +70,14 @@ int main() {
     ev_epoll.data.fd = kb_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, kb_fd, &ev_epoll);
 
-    render_status_bar("Wimwriter redo!", target_addr);
-    printf("WimWriter redo!\n");
-
     bool prompt_visible = false;
     int prompt_px = 0, prompt_py = 0;
     int epoll_timeout_ms = 300; // Kort timeout för catch-up
     int prompt_delay_ticks = 3; // 3 * 300 ms = 900 ms inaktivitet innan prompt
     int current_idle_ticks = 0;
+
+    render_status_bar("WimWriter redo!", target_addr);
+    printf("WimWriter redo!\n");
 
     // Main loop - CPU rests in read() until interrupt from keyboard
     while (1) {
