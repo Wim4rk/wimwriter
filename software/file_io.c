@@ -10,6 +10,27 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
+// Hjälpfunktion för att kontrollera och skapa kataloger
+static void ensure_directory_exists(const char *filepath) {
+    char temp_path[512];
+    strncpy(temp_path, filepath, sizeof(temp_path) - 1);
+    temp_path[sizeof(temp_path) - 1] = '\0';
+
+    // Leta efter sista snedstrecket för att isolera katalogstrukturen
+    char *last_slash = strrchr(temp_path, '/');
+    if (last_slash != NULL) {
+        *last_slash = '\0'; // Terminera strängen här för att få enbart sökvägen
+
+        struct stat st = {0};
+
+        // Om stat returnerar -1 saknas katalogen
+        if (stat(temp_path, &st) == -1) {
+            // Skapa katalogen med läs-, skriv- och körrättigheter för användaren
+            mkdir(temp_path, 0700);
+        }
+    }
+}
+
 static void get_full_path(const char *filename, char *full_path, size_t max_len) {
     const char *home_dir = NULL;
     const char *sudo_user = getenv("SUDO_USER");
@@ -166,6 +187,8 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
 void save_document_to_file(const char *filename) {
     char filepath[512];
     get_full_path(filename, filepath, sizeof(filepath));
+
+    ensure_directory_exists(filepath);
 
     FILE *file = fopen(filepath, "w");
     if (file == NULL) {
