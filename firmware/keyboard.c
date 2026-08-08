@@ -36,7 +36,10 @@ static const char map_default[128] = {
     [KEY_LEFTBRACE] = 0xE5,  // å (229)
     [KEY_APOSTROPHE] = 0xE4, // ä (228)
     [KEY_SEMICOLON] = 0xF6,  // ö (246)
-    [KEY_MINUS] = '+', [KEY_SLASH] = '-', [KEY_COMMA] = ',', [KEY_DOT] = '.'
+    [KEY_MINUS] = '+', [KEY_SLASH] = '-', [KEY_COMMA] = ',', [KEY_DOT] = '.',
+    [KEY_BACKSLASH] = '\'',  // Knappen med ' och *
+    [KEY_RIGHTBRACE] = '¨',  // Knappen med ¨, ^ och ~
+    [KEY_EQUAL] = '´'        // Knappen med ´ och ` (till vänster om backspace)
 };
 
 // Mappning för Shift/Caps Lock (versaler)
@@ -53,7 +56,10 @@ static const char map_shift[128] = {
     [KEY_LEFTBRACE] = 0xC5,  // Å (197)
     [KEY_APOSTROPHE] = 0xC4, // Ä (196)
     [KEY_SEMICOLON] = 0xD6,  // Ö (214)
-    [KEY_MINUS] = '?', [KEY_SLASH] = '_', [KEY_COMMA] = ';', [KEY_DOT] = ':'
+    [KEY_MINUS] = '?', [KEY_SLASH] = '_', [KEY_COMMA] = ';', [KEY_DOT] = ':',
+    [KEY_BACKSLASH] = '*',
+    [KEY_RIGHTBRACE] = '^',
+    [KEY_EQUAL] = '`'
 };
 
 int keyboard_init(const char *device_path) {
