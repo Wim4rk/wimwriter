@@ -370,6 +370,9 @@ void render_status_bar(const char *text, UDOUBLE target_addr) {
     }
 
     // Ett enda massivt SPI-anrop till IT8951 för hela statusraden
+    status_bar_visible = true;
+    status_bar_timestamp = time(NULL);
+
     send_and_display_buffer(status_buffer, 0, physical_y, physical_w, physical_h, target_addr, IT8951_A2_MODE);
 }
 
