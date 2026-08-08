@@ -24,7 +24,8 @@ void send_buffer_to_ram(UBYTE *buffer, int x, int y, int w, int h, UDOUBLE targe
     IT8951_Area_Img_Info area_info;
 
     load_info.Source_Buffer_Addr = buffer;
-    load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    // load_info.Endian_Type = IT8951_LDIMG_L_ENDIAN;
+    load_info.Endian_Type = IT8951_LDIMG_B_ENDIAN;
     load_info.Pixel_Format = IT8951_8BPP;
     load_info.Rotate = IT8951_ROTATE_0;
     load_info.Target_Memory_Addr = target_addr;
