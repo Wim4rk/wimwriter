@@ -439,6 +439,18 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 hide_status_bar_and_redraw(target_addr);
             }
 
+            if ((c == 's' || c == 'S') && keyboard_is_ctrl_pressed()) {
+                if (strlen(current_filename) == 0) {
+                    is_suggested_name = true;
+                    generate_default_filename();
+                    update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
+                } else {
+                    save_to_sd(current_filename, target_addr);
+                }
+                return; // Avbryt vidare inmatning
+            }
+
             if (key_code == KEY_F1) {
                 show_help_box(target_addr);
                 current_state = STATE_HELP;
