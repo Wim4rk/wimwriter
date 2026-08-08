@@ -460,6 +460,5 @@ void refresh_display_full(char *buffer, UDOUBLE target_addr) {
         }
     }
 
-    // 4. Rita ut texten i GC16-läge (Mode 2) för maximal skärpa
-    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 2);
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 0);
 }

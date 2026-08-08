@@ -11,23 +11,18 @@
 #include <sys/stat.h>
 
 // Hjälpfunktion för att kontrollera och skapa kataloger
-static void ensure_directory_exists(const char *filepath) {
-    char temp_path[512];
-    strncpy(temp_path, filepath, sizeof(temp_path) - 1);
-    temp_path[sizeof(temp_path) - 1] = '\0';
-
-    // Leta efter sista snedstrecket för att isolera katalogstrukturen
-    char *last_slash = strrchr(temp_path, '/');
-    if (last_slash != NULL) {
-        *last_slash = '\0'; // Terminera strängen här för att få enbart sökvägen
+static void ensure_directory_exists(char *filepath) {
+    char *p;
+    // Stega framåt och leta efter varje snedstreck efter rotkatalogen
+    for (p = strchr(filepath + 1, '/'); p != NULL; p = strchr(p + 1, '/')) {
+        *p = '\0'; // Pausa strängen temporärt för att isolera den aktuella mappen
 
         struct stat st = {0};
-
-        // Om stat returnerar -1 saknas katalogen
-        if (stat(temp_path, &st) == -1) {
-            // Skapa katalogen med läs-, skriv- och körrättigheter för användaren
-            mkdir(temp_path, 0700);
+        if (stat(filepath, &st) == -1) {
+            mkdir(filepath, 0700);
         }
+
+        *p = '/'; // Återställ snedstrecket innan vi letar vidare
     }
 }
 
