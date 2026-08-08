@@ -96,7 +96,9 @@ void init_glyph_cache(void) {
         const uint8_t* source_glyph = (const uint8_t*)wim_font_24x43 + (c * FONT_24X43_BYTES);
 
         for (int i = 0; i < FONT_24X43_BYTES; i++) {
-            pre_flipped_glyphs[c][i] = source_glyph[FONT_24X43_BYTES - 1 - i];
+            // Tröskla värdet: mörkare än 128 blir rent svart (0x00), annars vitt (0xFF)
+            pre_flipped_glyphs[c][i] = (pixel_val < 128) ? 0x00 : 0xFF;
+            // pre_flipped_glyphs[c][i] = source_glyph[FONT_24X43_BYTES - 1 - i];
         }
     }
 }
