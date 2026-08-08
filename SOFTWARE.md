@@ -63,11 +63,9 @@ Spara nu (Tvingar en manuell skrivning till SD-kortet). Om filen inte finns på 
 
 ### F3 - Öppna
 
-* Filbyte. F3 växlar wimwriter till nästa fil i katalogen. Filerna sorteras efter senast öppnad. I statusraden visas den aktuella filens namn tills jag börjar skriva.
-
-* Esc avbryter och återgår till senast bearbetade fil.
-
-Det återstår att se om bläckskärmen klarar av det här på ett tillfredsställande vis? Reservplan 1: F3 ritar upp en enkel filhanterare, där användaren kan navigera och välja filer och kataloger. Reservplan 2: En mycket enkel LCD-skärm ansluts och kan då användas som statusrad.
+* F3 - Filhanterare: En ruta öppnas med en fillista (rutan ska likna hjälprutan vid F1). Pilar upp och ner flyttar en markör mellan filnamnen. Esc avbryter.
+* Ctrl + F3 - Växla fil: Växlar mellan 2 dokument; nuvarande och senast ändrade filen. I statusraden växlas filnamnet för att visa vilken fil som öppnas. Vid F3 sparas nuvarande fil innan vi växlar. Esc har ingen funktion.
+* Kataloger: Om vi vill införa kataloger kan vi använda upp och ner för att byta fil, höger och vänster för att byta katalog. Katalogen ska visas som en titel ovanför listan. Esc avbryter och återgår till senast bearbetade fil.
 
 ### F4 - Nytt dokument
 
@@ -142,4 +140,4 @@ Detta är saker vi implementerar *om det visar sig möjligt*.
 ---
 *Dokumentet skapat 2026-07-24*
 
-*Dokumentet senast uppdaterat 2026-07-31*
+*Dokumentet senast uppdaterat 2026-08-08*
