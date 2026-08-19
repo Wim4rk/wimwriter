@@ -8,10 +8,11 @@
 
 För att projektet ska vara intressant och framgångsrikt måste vi kompromisslöst prioritera följande:
 
-1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska helst hänga med även under snabba "bursts" i skrivandet.
+1. **Lägsta möjliga latens:** Tangenttryck till skärmrespons måste kännas omedelbart. Skärmen ska hänga med även under snabba "bursts" i skrivandet.
 2. **Extrem strömsnålhet:** WiFi och onödiga processer ska hållas helt avstängda under skrivfasen. Endast rå inmatning och skärmdrivning får belasta den enkärniga ARMv6-processorn.
 3. **Enkel filhantering** Möjlighet att växla mellan olika textdokument.
-4. **Säkerhet för data:** All text ska synkas säkert och självständigt mot en NAS eller till Dropbox. Osparade dokument ska dumpas i en swapfil på SD-kortet. Om användaren växlar fil ska föregående dokument sparas, och swapfilen ersättas.
+4. **Säkerhet för data:** All text ska synkas säkert med hjälp av git. Osparade filer ska hållas säkra i händelse av en systemstörning.
+5. **Intuitiv funktion:** Det ska kännas som att skriva på ett papper. Endast enkla redigeringar är möjliga.
 
 ---
 

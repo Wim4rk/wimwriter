@@ -89,6 +89,7 @@ En *manual override* som låter dig slå på/av WiFi, till exempel för administ
 **F2 Sparar fil.** Om ingen fil är skapad, skapa en ny fil och fråga efter filnamnet i statusraden (sparas som).
 **F3 Växla fil.** Växlar mellan dokument i tids-ordning. F3 en gång sparar aktuellt dokument (eller spara som, om ingen fil är skapad) och hoppar till senaste dokumentet, två gånger till näst senaste osv. Enter öppnar filen på skärmen för redigering. Esc återgår till aktuell fil.
 **F4 Ny fil.** Tömmer skrivytan så att användaren kan börja skriva en ny fil.
+**Stänga utan att spara?** Hur uppnår vi det? En funktionsknapp slänger allt och återgår till senast sparat (eller en tom fil).
 
 ## Spara state
 
@@ -140,4 +141,4 @@ Detta är saker vi implementerar *om det visar sig möjligt*.
 ---
 *Dokumentet skapat 2026-07-24*
 
-*Dokumentet senast uppdaterat 2026-08-08*
+*Dokumentet senast uppdaterat 2026-08-19*
