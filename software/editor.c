@@ -36,6 +36,9 @@ static int pending_start_col = -1;
 static int filename_len = 0;
 static char previous_filename[256] = "";
 static bool just_created_new_file = false;
+
+static int pending_exit_key = 0;
+
 static int browser_selected_index = 0;
 static int browser_scroll_offset = 0;
 
@@ -136,7 +139,11 @@ static void save_to_sd(const char *filename, UDOUBLE target_addr) {
 
 static void update_status_bar_visuals(UDOUBLE target_addr) {
     char status_text[300];
-    snprintf(status_text, sizeof(status_text), "Spara som: %s", current_filename);
+    if (filename_len == 0) {
+        snprintf(status_text, sizeof(status_text), "[Tryck Enter för att slänga dokumentet]");
+    } else {
+        snprintf(status_text, sizeof(status_text), "Spara som: %s", current_filename);
+    }
     render_status_bar(status_text, target_addr);
 }
 
@@ -676,6 +683,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
             if ((c == 's' || c == 'S') && keyboard_is_ctrl_pressed()) {
                 if (strlen(current_filename) == 0) {
+                    pending_exit_key = 0;
                     is_suggested_name = true;
                     generate_default_filename();
                     update_status_bar_visuals(target_addr);
@@ -683,7 +691,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 } else {
                     save_to_sd(current_filename, target_addr);
                 }
-                return; // Avbryt vidare inmatning
+                return;
             }
 
             if (key_code == KEY_F1) {
@@ -692,6 +700,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             }
             else if (key_code == KEY_F2) {
                 if (strlen(current_filename) == 0) {
+                    pending_exit_key = KEY_F2;
                     is_suggested_name = true;
                     generate_default_filename();
                     update_status_bar_visuals(target_addr);
@@ -701,56 +710,60 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_F3) {
-                if (strlen(current_filename) > 0) {
-                    save_document_to_file(current_filename); // Spara alltid nuvarande fil först
-                }
-
-                scan_directory_for_files();
-
-                if (keyboard_is_ctrl_pressed()) {
-                    // Ctrl + F3: Snabbväxla mellan de två senaste filerna
-                    if (total_files_found > 1) {
-                        // Om den aktuella filen är index 0, välj index 1, annars index 0
-                        current_file_index = (current_file_index == 0) ? 1 : 0;
-
-                        snprintf(current_filename, sizeof(current_filename), "%s", file_list[current_file_index].filename);
-                        filename_len = strlen(current_filename);
-
-                        load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
-                        refresh_display_full(text_buffer, target_addr);
-
-                        char status_text[300];
-                        snprintf(status_text, sizeof(status_text), "Öppnad: %s", current_filename);
-                        render_status_bar(status_text, target_addr);
+                if (strlen(current_filename) == 0 && model_get_text_length() > 0) {
+                    pending_exit_key = KEY_F3;
+                    is_suggested_name = true;
+                    generate_default_filename();
+                    update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
+                } else {
+                    if (strlen(current_filename) > 0) {
+                        save_document_to_file(current_filename);
                     }
-                }
-                else {
-                    // Endast F3: Öppna filhanteraren
-                    if (total_files_found > 0) {
-                        browser_selected_index = 0;
-                        browser_scroll_offset = 0;
-                        show_file_browser(target_addr);
-                        current_state = STATE_FILE_BROWSER;
+                    scan_directory_for_files();
+
+                    if (keyboard_is_ctrl_pressed()) {
+                        if (total_files_found > 1) {
+                            current_file_index = (current_file_index == 0) ? 1 : 0;
+                            snprintf(current_filename, sizeof(current_filename), "%s", file_list[current_file_index].filename);
+                            filename_len = strlen(current_filename);
+                            load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+                            refresh_display_full(text_buffer, target_addr);
+                            char status_text[300];
+                            snprintf(status_text, sizeof(status_text), "Öppnad: %s", current_filename);
+                            render_status_bar(status_text, target_addr);
+                        }
+                    } else {
+                        if (total_files_found > 0) {
+                            browser_selected_index = 0;
+                            browser_scroll_offset = 0;
+                            show_file_browser(target_addr);
+                            current_state = STATE_FILE_BROWSER;
+                        }
                     }
                 }
             }
             else if (key_code == KEY_F4) {
-                if (strlen(current_filename) > 0) {
-                    save_document_to_file(current_filename);
-                    strncpy(previous_filename, current_filename, sizeof(previous_filename));
+                if (strlen(current_filename) == 0 && model_get_text_length() > 0) {
+                    pending_exit_key = KEY_F4;
+                    is_suggested_name = true;
+                    generate_default_filename();
+                    update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
+                } else {
+                    if (strlen(current_filename) > 0) {
+                        save_document_to_file(current_filename);
+                        strncpy(previous_filename, current_filename, sizeof(previous_filename));
+                    }
+                    model_init();
+                    memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
+                    *cursor_row = JUMP_LINES;
+                    *cursor_col = 0;
+                    clear_filename_buffer();
+                    just_created_new_file = true;
+                    stitch_and_render_screen(text_buffer, target_addr);
+                    render_status_bar("Ny fil. (Tryck Esc för att återgå)", target_addr);
                 }
-
-                model_init();
-
-                memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
-                *cursor_row = JUMP_LINES;
-                *cursor_col = 0;
-
-                clear_filename_buffer();
-                just_created_new_file = true;
-
-                stitch_and_render_screen(text_buffer, target_addr);
-                render_status_bar("Ny fil. (Tryck Esc för att återgå)", target_addr);
             }
             else if (key_code == KEY_F5) {
                 refresh_display_full(text_buffer, target_addr);
