@@ -575,6 +575,33 @@ static void show_commit_box(UDOUBLE target_addr) {
     send_and_display_buffer(commit_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
 }
 
+void editor_shutdown(UDOUBLE target_addr) {
+    // 1. Spara filen om den har ett namn, annars generera ett och spara
+    if (strlen(current_filename) > 0) {
+        save_document_to_file(current_filename);
+    } else if (model_get_text_length() > 0) {
+        generate_default_filename();
+        save_document_to_file(current_filename);
+    }
+
+    // 2. Synkronisera mot NAS
+    sync_to_git("Auto-commit vid nedstängning", target_addr);
+
+    // 3. Rensa skärmen totalt
+    // Fyll hela skärmbufferten med vitt (0xF0 för 8bpp)
+    memset(full_screen_buffer, 0xF0, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    // Använd GC16 (Mode 2) för en djupgående rensning av hela panelen
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 2);
+
+    // 4. Ge det avslutande meddelandet
+    // (render_status_bar använder A2-läge och ritar endast i överkanten)
+    render_status_bar("Systemet avstängt. Du kan bryta strömmen.", target_addr);
+
+    // Ge IT8951-kontrollern marginal att rita färdigt innan SPI-kommunikationen bryts
+    sleep(2);
+}
+
 void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting) {
     if (ev->type != EV_KEY) return;
 

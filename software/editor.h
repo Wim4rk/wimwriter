@@ -24,9 +24,9 @@ extern EditorState current_state;
 extern time_t status_bar_timestamp;
 extern bool status_bar_visible;
 
-// Huvudfunktion för att ta emot inmatning från main-loopen
 void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting);
 void editor_flush_queue(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr);
 void open_latest_file(char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
+void editor_shutdown(UDOUBLE target_addr);
 
 #endif

@@ -59,10 +59,14 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     // Vi navigerar till rätt mapp innan vi kör git-kommandona
     if (commit_msg == NULL || strlen(commit_msg) == 0) {
         snprintf(command, sizeof(command),
-                 "cd ~/Dokument/writer && git add . && git commit -m 'Auto-sync' && git push origin main");
+                    "cd ~/Dokument/writer && git add . && "
+                    "(git diff --staged --quiet || git commit -m 'Auto-sync') && "
+                    "git push origin main");
     } else {
         snprintf(command, sizeof(command),
-                 "cd ~/Dokument/writer && git add . && git commit -m '%s' && git push origin main", commit_msg);
+                    "cd ~/Dokument/writer && git add . && "
+                    "(git diff --staged --quiet || git commit -m '%s') && "
+                    "git push origin main", commit_msg);
     }
 
     // 3. Utför push
