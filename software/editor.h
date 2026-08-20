@@ -12,8 +12,9 @@ typedef enum {
     STATE_FILE_BROWSER,
     STATE_FILE_SWITCH,
     STATE_NAMING_FILE,
-    STATE_CONFIRM_OVERWRITE
-} EditorState;
+    STATE_CONFIRM_OVERWRITE,
+    STATE_GIT_COMMIT
+} EditorStat
 
 extern bool is_wifi_active;
 // Gör tillståndet tillgängligt vid behov

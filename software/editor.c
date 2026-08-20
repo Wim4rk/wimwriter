@@ -39,6 +39,9 @@ static bool just_created_new_file = false;
 static int browser_selected_index = 0;
 static int browser_scroll_offset = 0;
 
+static char commit_message[256] = "";
+static int commit_len = 0;
+
 typedef struct {
     char filename[256];
     time_t last_modified;
@@ -514,6 +517,63 @@ void editor_flush_queue(char *text_buffer, int cursor_row, int cursor_col, UDOUB
     pending_start_col = -1;
 }
 
+static void show_commit_box(UDOUBLE target_addr) {
+    int box_w = 700;
+    int box_h = 200;
+    int phys_x = (SCREEN_WIDTH - box_w) / 2;
+    int phys_y = (SCREEN_HEIGHT - box_h) / 2;
+
+    static UBYTE commit_buffer[700 * 200];
+
+    // 1. Fyll ramen svart (2px) och insidan med vitt (0xF0)
+    memset(commit_buffer, 0x00, sizeof(commit_buffer));
+    for (int y = 2; y < box_h - 2; y++) {
+        memset(&commit_buffer[y * box_w + 2], 0xF0, box_w - 4);
+    }
+
+    int start_local_y = box_h - FONT_H - 20;
+
+    // 2. Rita rubrik
+    const char *title = "[ git commit -m ]";
+    int title_len = strlen(title);
+    int current_local_x = box_w - 20 - FONT_W;
+
+    for (int c = 0; c < title_len; c++) {
+        unsigned char uc = (unsigned char)title[c];
+        if (uc >= 32) {
+            const UBYTE *glyph = pre_flipped_glyphs[uc];
+            for (int h = 0; h < FONT_H; h++) {
+                memcpy(&commit_buffer[(start_local_y + h) * box_w + current_local_x],
+                       &glyph[h * FONT_W], FONT_W);
+            }
+        }
+        current_local_x -= FONT_W; // Stega fysiskt vänster
+    }
+
+    start_local_y -= (FONT_H + 30);
+
+    // 3. Rita inmatad text + prompt
+    char display_text[300];
+    snprintf(display_text, sizeof(display_text), "> %s_", commit_message);
+    int text_len = strlen(display_text);
+    int text_local_x = box_w - 20 - FONT_W;
+
+    for (int c = 0; c < text_len; c++) {
+        unsigned char uc = (unsigned char)display_text[c];
+        if (uc >= 32) {
+            const UBYTE *glyph = pre_flipped_glyphs[uc];
+            for (int h = 0; h < FONT_H; h++) {
+                memcpy(&commit_buffer[(start_local_y + h) * box_w + text_local_x],
+                       &glyph[h * FONT_W], FONT_W);
+            }
+        }
+        text_local_x -= FONT_W;
+    }
+
+    // Rita hela rutan till skärmen asynkront i A2-läget
+    send_and_display_buffer(commit_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
+}
+
 void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting) {
     if (ev->type != EV_KEY) return;
 
@@ -618,6 +678,13 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             }
             else if (key_code == KEY_F5) {
                 refresh_display_full(text_buffer, target_addr);
+            }
+            else if (key_code == KEY_F9) {
+                // Nollställ bufferten och rita upp rutan
+                commit_len = 0;
+                memset(commit_message, 0, sizeof(commit_message));
+                show_commit_box(target_addr);
+                current_state = STATE_GIT_COMMIT;
             }
             else if (key_code == KEY_F10) {
                 toggle_wifi();
@@ -782,14 +849,49 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 current_state = STATE_NAMING_FILE;
             }
             break;
+            case STATE_GIT_COMMIT:
+                if (c > 0) {
+                    if (c == '\n') {
+                        // 1. Städa bort rutan från skärmen
+                        hide_help_box_and_redraw(text_buffer, target_addr);
+                        current_state = STATE_EDITING;
 
-            if (c == '\n') {
-                putchar('\n');
-            } else if (c == 127) {
-                printf("\b \b");
-            } else if (c >= 32 && c <= 126) {
-                putchar(c);
-            }
-            fflush(stdout);
+                        // 2. Tvätta texten och påbörja synkningen
+                        char safe_msg[256];
+                        sanitize_string(commit_message, safe_msg, sizeof(safe_msg));
+                        sync_to_git(safe_msg, target_addr);
+                    }
+                    else if (c == 127) {
+                        // Backspace
+                        if (commit_len > 0) {
+                            commit_len--;
+                            commit_message[commit_len] = '\0';
+                            show_commit_box(target_addr);
+                        }
+                    }
+                    else {
+                        // Standard inmatning
+                        if (commit_len < sizeof(commit_message) - 1) {
+                            commit_message[commit_len] = c;
+                            commit_len++;
+                            commit_message[commit_len] = '\0';
+                            show_commit_box(target_addr);
+                        }
+                    }
+                }
+                else if (key_code == KEY_ESC) {
+                    // Avbryt synk
+                    hide_help_box_and_redraw(text_buffer, target_addr);
+                    current_state = STATE_EDITING;
+                }
+                break;
     }
+    if (c == '\n') {
+        putchar('\n');
+    } else if (c == 127) {
+        printf("\b \b");
+    } else if (c >= 32 && c <= 126) {
+        putchar(c);
+    }
+    fflush(stdout);
 }

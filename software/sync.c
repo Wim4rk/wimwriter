@@ -4,6 +4,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
 
 void toggle_wifi(void) {
     // Växla flaggan
@@ -31,4 +34,59 @@ bool get_actual_wifi_status(void) {
     }
     close(fd);
     return is_active;
+}
+
+void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
+    render_status_bar("Synkroniserar... Ansluter till nätverk.", target_addr);
+
+    // 1. Slå på WiFi om det är avstängt
+    if (!is_wifi_active) {
+        toggle_wifi();
+    }
+
+    // 2. Vänta på att WiFi-gränssnittet ska vakna
+    int retries = 10;
+    while (!get_actual_wifi_status() && retries > 0) {
+        sleep(1);
+        retries--;
+    }
+
+    // Ge Tailscale ytterligare ett par sekunder att upprätta tunneln
+    sleep(3);
+
+    char command[512];
+
+    // Vi navigerar till rätt mapp innan vi kör git-kommandona
+    if (commit_msg == NULL || strlen(commit_msg) == 0) {
+        snprintf(command, sizeof(command),
+                 "cd ~/Dokument/writer && git add . && git commit -m 'Auto-sync' && git push origin main");
+    } else {
+        snprintf(command, sizeof(command),
+                 "cd ~/Dokument/writer && git add . && git commit -m '%s' && git push origin main", commit_msg);
+    }
+
+    // 3. Utför push
+    int status = system(command);
+
+    // 4. Hantera eventuella konflikter
+    if (status != 0) {
+        char conflict_cmd[512];
+        time_t now = time(NULL);
+        snprintf(conflict_cmd, sizeof(conflict_cmd),
+                 "cd ~/Dokument/writer && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
+                 now, now);
+        system(conflict_cmd);
+
+        // Återgå till main
+        system("cd ~/Dokument/writer && git checkout main");
+
+        render_status_bar("Synk-konflikt: Sparad som ny branch", target_addr);
+    } else {
+        render_status_bar("Synkronisering slutförd", target_addr);
+    }
+
+    // 5. Stäng av WiFi igen för att spara ström
+    if (is_wifi_active) {
+        toggle_wifi();
+    }
 }
