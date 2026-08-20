@@ -173,7 +173,7 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
                     break_col--;
                 }
 
-                if (break_col > 0) {
+                if (break_col > 0 && (c - break_col - 1) > 0) {
                     int word_len = c - break_col - 1;
                     char temp_str[word_len];
 
@@ -229,7 +229,8 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
     *cursor_col = c;
 
     // 7. Ett enda stort SPI-anrop (i det snabba A2-läget)
-    stitch_and_render_screen(buffer, target_addr);
+    // Ser ut att vara en dubbel skärmuppdatering på gång här:
+    // stitch_and_render_screen(buffer, target_addr);
 }
 
 void save_document_to_file(const char *filename) {

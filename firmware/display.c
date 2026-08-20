@@ -411,7 +411,7 @@ void stitch_and_render_screen(char *buffer, UDOUBLE target_addr) {
         }
     }
 
-    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, IT8951_A2_MODE);
+    send_and_display_buffer(full_screen_buffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, target_addr, 2);
 }
 
 

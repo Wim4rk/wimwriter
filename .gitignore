@@ -3,3 +3,5 @@ pic/
 lib/GUI
 
 *.o
+wimwriter
+wimwriter.bak

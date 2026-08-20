@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <linux/input.h>
@@ -12,7 +11,6 @@
 #include "firmware/keyboard.h"
 #include "software/editor.h"
 #include "software/model.h"
-#include "software/sync.h"
 
 
 #define KEYBOARD_DEVICE "/dev/input/event0"
@@ -74,9 +72,6 @@ int main() {
 
     printf("Rensar buffer...\n");
 
-    // För att testa:
-    dump_glyph_to_terminal('M');
-
     clear_buffer();
     model_init();
 
@@ -87,6 +82,9 @@ int main() {
     render_status_bar("Öppnar senaste fil...", target_addr);
     printf("Öppnar senaste fil...\n");
     open_latest_file(text_buffer, &cursor_row, &cursor_col, target_addr);
+
+    // Tvinga fram en helskärmsuppdatering av det vi just laddade in
+    refresh_display_full(text_buffer, target_addr);
 
     // Initiera epoll
     int epoll_fd = epoll_create1(0);
