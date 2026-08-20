@@ -79,12 +79,11 @@ int main() {
     int cursor_col = 0;
     int cursor_row = JUMP_LINES;
 
+    refresh_display_full(text_buffer, target_addr);
+
     render_status_bar("Öppnar senaste fil...", target_addr);
     printf("Öppnar senaste fil...\n");
     open_latest_file(text_buffer, &cursor_row, &cursor_col, target_addr);
-
-    // Tvinga fram en helskärmsuppdatering av det vi just laddade in
-    refresh_display_full(text_buffer, target_addr);
 
     // Initiera epoll
     int epoll_fd = epoll_create1(0);
