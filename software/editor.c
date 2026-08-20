@@ -58,7 +58,6 @@ static char dir_list[20][256];
 static int total_dirs_found = 0;
 static int current_dir_index = 0;
 
-static int pending_start_col = -1;
 static int pending_bs_start_row = -1; // Spårar raden där raderingen inleddes
 
 static void show_help_box(UDOUBLE target_addr) {
@@ -369,80 +368,6 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
         else if (uc >= 32 || c == '\n') model_insert_char(c);
         append_to_temp_file(c);
     }
-
-    case 127: // Backspace
-        if (keyboard_is_ctrl_pressed()) {
-            // Säkerställ att eventuell text skrivs innan vi raderar hela ord
-            editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
-
-            int r = *cursor_row;
-            int c = *cursor_col;
-            int old_row = *cursor_row;
-
-            // 1. Hoppa över eventuella mellanslag bakåt
-            while (r > 0 || c > 0) {
-                int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
-                int prev_r = (c == 0) ? r - 1 : r;
-                if (BUF_AT(text_buffer, prev_r, prev_c) != ' ') break;
-                c = prev_c;
-                r = prev_r;
-            }
-
-            // 2. Leta bakåt tills vi hittar nästa mellanslag
-            while (r > 0 || c > 0) {
-                int prev_c = (c == 0) ? MAX_COLS - 1 : c - 1;
-                int prev_r = (c == 0) ? r - 1 : r;
-                if (BUF_AT(text_buffer, prev_r, prev_c) == ' ') break;
-                c = prev_c;
-                r = prev_r;
-            }
-
-            int word_len = (*cursor_row * MAX_COLS + *cursor_col) - (r * MAX_COLS + c);
-
-            if (word_len > 0) {
-                for (int i = 0; i < word_len; i++) model_delete_char();
-                for (int i = 0; i < word_len; i++) {
-                    if (*cursor_col > 0) {
-                        (*cursor_col)--;
-                    } else if (*cursor_row > 0) {
-                        (*cursor_row)--;
-                        *cursor_col = MAX_COLS - 1;
-                    }
-                    BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
-                }
-                // 5. Rita om de påverkade raderna
-                render_rows_stitched(*cursor_row, old_row, text_buffer, target_addr);
-            }
-        } else {
-            // Standard backspace-buffert
-            if (pending_bs_start_row == -1) {
-                pending_bs_start_row = *cursor_row;
-            }
-
-            if (*cursor_col > 0) {
-                (*cursor_col)--;
-                BUF_AT(text_buffer, *cursor_row, *cursor_col) = '\0';
-            } else if (*cursor_row > 0) {
-                (*cursor_row)--;
-                *cursor_col = MAX_COLS - 1;
-
-                while (*cursor_col > 0 && (BUF_AT(text_buffer, *cursor_row, *cursor_col) == '\0' || BUF_AT(text_buffer, *cursor_row, *cursor_col) == ' ')) {
-                    (*cursor_col)--;
-                }
-
-                if (*cursor_col < MAX_COLS - 1) {
-                    (*cursor_col)++;
-                }
-            } else {
-                break;
-            }
-
-            // Genomför utritningen enbart om kön är tom
-            if (!more_keys_waiting) {
-                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
-            }
-        }
-        break;
 
     switch (c) {
         case '\n': // Enter
@@ -1040,6 +965,52 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     current_state = STATE_EDITING;
                 }
                 break;
+                case STATE_CONFIRM_OVERWRITE:
+                    if (c == 'j' || c == 'J') {
+                        save_to_sd(current_filename, target_addr);
+                        hide_status_bar_and_redraw(target_addr);
+                        current_state = STATE_EDITING;
+                    }
+                    else if (c == 'n' || c == 'N') {
+                        update_status_bar_visuals(target_addr);
+                        current_state = STATE_NAMING_FILE;
+                    }
+                    break;
+
+                case STATE_GIT_COMMIT:
+                    if (c > 0) {
+                        if (c == '\n') {
+                            // Städa bort rutan från skärmen
+                            hide_help_box_and_redraw(text_buffer, target_addr);
+                            current_state = STATE_EDITING;
+
+                            // Tvätta texten och påbörja synkningen
+                            char safe_msg[256];
+                            sanitize_string(commit_message, safe_msg, sizeof(safe_msg));
+                            sync_to_git(safe_msg, target_addr);
+                        }
+                        else if (c == 127) { // Backspace
+                            if (commit_len > 0) {
+                                commit_len--;
+                                commit_message[commit_len] = '\0';
+                                show_commit_box(target_addr);
+                            }
+                        }
+                        else { // Standardinmatning
+                            if (commit_len < sizeof(commit_message) - 1) {
+                                commit_message[commit_len] = c;
+                                commit_len++;
+                                commit_message[commit_len] = '\0';
+                                show_commit_box(target_addr);
+                            }
+                        }
+                    }
+                    else if (key_code == KEY_ESC) {
+                        hide_help_box_and_redraw(text_buffer, target_addr);
+                        current_state = STATE_EDITING;
+                    }
+                    break;
+            }
     }
     if (c == '\n') {
         putchar('\n');
