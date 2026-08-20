@@ -57,6 +57,61 @@ static void get_full_path(const char *filename, char *full_path, size_t max_len)
 
 static FILE *temp_file = NULL;
 
+// 1. Hjälpfunktion för att mappa UTF-8 till intern Latin-1
+char map_utf8_to_internal(unsigned char byte1, unsigned char byte2) {
+    if (byte1 == 0xC3) {
+        if (byte2 == 0xA5) return (char)0xE5; // å
+        if (byte2 == 0xA4) return (char)0xE4; // ä
+        if (byte2 == 0xB6) return (char)0xF6; // ö
+        if (byte2 == 0x85) return (char)0xC5; // Å
+        if (byte2 == 0x84) return (char)0xC4; // Ä
+        if (byte2 == 0x96) return (char)0xD6; // Ö
+    }
+    return 0;
+}
+
+// Hjälpfunktion för att konvertera intern Latin-1 till UTF-8 och skriva till fil
+void write_internal_to_utf8(unsigned char ch, FILE *file) {
+    if (ch == 0xE5) { fputc(0xC3, file); fputc(0xA5, file); }      // å
+    else if (ch == 0xE4) { fputc(0xC3, file); fputc(0xA4, file); } // ä
+    else if (ch == 0xF6) { fputc(0xC3, file); fputc(0xB6, file); } // ö
+    else if (ch == 0xC5) { fputc(0xC3, file); fputc(0x85, file); } // Å
+    else if (ch == 0xC4) { fputc(0xC3, file); fputc(0x84, file); } // Ä
+    else if (ch == 0xD6) { fputc(0xC3, file); fputc(0x96, file); } // Ö
+    else if (ch >= 32 || ch == '\n') {
+        fputc(ch, file); // Standard ASCII
+    }
+}
+
+// 2. Funktion för att tvätta strängar (säkrar filnamn och commit-meddelanden)
+void sanitize_string(const char *input, char *output, size_t max_len) {
+    size_t j = 0;
+    for (size_t i = 0; input[i] != '\0' && j < max_len - 1; i++) {
+        unsigned char ch = (unsigned char)input[i];
+
+        // Om indatan är i UTF-8 (t.ex. vid inläsning från OS)
+        if (ch == 0xC3 && input[i+1] != '\0') {
+            unsigned char next_ch = input[i+1];
+            if (next_ch == 0xA5 || next_ch == 0xA4) output[j++] = 'a';
+            else if (next_ch == 0xB6) output[j++] = 'o';
+            else if (next_ch == 0x85 || next_ch == 0x84) output[j++] = 'A';
+            else if (next_ch == 0x96) output[j++] = 'O';
+            i++; // Hoppa över nästa byte
+        }
+        // Om indatan är i intern Latin-1 (t.ex. inskrivet via editorns tangentbordslogik)
+        else if (ch == 0xE5 || ch == 0xE4) output[j++] = 'a';
+        else if (ch == 0xF6) output[j++] = 'o';
+        else if (ch == 0xC5 || ch == 0xC4) output[j++] = 'A';
+        else if (ch == 0xD6) output[j++] = 'O';
+        // Släpp igenom standard ASCII, ersätt mellanslag med understreck
+        else if (ch >= 32 && ch <= 126) {
+            if (ch == ' ') output[j++] = '_';
+            else output[j++] = ch;
+        }
+    }
+    output[j] = '\0';
+}
+
 void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
     char filepath[512];
     get_full_path(filename, filepath, sizeof(filepath));
@@ -71,12 +126,10 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
             // Identifiera starten på ett svenskt UTF-8-tecken
             if (ch == 0xC3) {
                 int next_ch = fgetc(file);
-                if (next_ch == 0xA5) model_insert_char(0xE5);      // å
-                else if (next_ch == 0xA4) model_insert_char(0xE4); // ä
-                else if (next_ch == 0xB6) model_insert_char(0xF6); // ö
-                else if (next_ch == 0x85) model_insert_char(0xC5); // Å
-                else if (next_ch == 0x84) model_insert_char(0xC4); // Ä
-                else if (next_ch == 0x96) model_insert_char(0xD6); // Ö
+                char mapped = map_utf8_to_internal((unsigned char)ch, (unsigned char)next_ch);
+                if (mapped != 0) {
+                    model_insert_char(mapped);
+                }
             } else if ((ch >= 32 && ch <= 126) || ch == '\n') {
                 model_insert_char((char)ch);
             }
@@ -160,7 +213,7 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
         }
     }
 
-    // 6. Justera vyhöjden enligt specifikation (lämna JUMP_LINES tomma i botten)[cite: 2]
+    // 6. Justera vyhöjden enligt specifikation (lämna JUMP_LINES tomma i botten)
     int target_row = MAX_ROWS - JUMP_LINES;
     if (r > target_row) {
         int lines_to_shift = r - target_row;
@@ -175,37 +228,33 @@ void load_file_into_buffer(const char *filename, char *buffer, int *cursor_row, 
     *cursor_row = r;
     *cursor_col = c;
 
-    // 7. Ett enda stort SPI-anrop (i det snabba A2-läget)[cite: 1]
+    // 7. Ett enda stort SPI-anrop (i det snabba A2-läget)
     stitch_and_render_screen(buffer, target_addr);
 }
 
 void save_document_to_file(const char *filename) {
+    // 1. Tvätta filnamnet så vi inte får in ogiltiga tecken i filsystemet
+    char safe_filename[256];
+    sanitize_string(filename, safe_filename, sizeof(safe_filename));
+
     char filepath[512];
-    get_full_path(filename, filepath, sizeof(filepath));
+    get_full_path(safe_filename, filepath, sizeof(filepath));
 
     ensure_directory_exists(filepath);
 
     FILE *file = fopen(filepath, "w");
     if (file == NULL) {
-        return; // Tips: Här kan vi lägga till en utskrift i statusraden om fel
+        return;
     }
 
     int doc_length = model_get_text_length();
 
+    // 2. Skriv innehållet med vår nya hjälpfunktion
     for (int i = 0; i < doc_length; i++) {
         unsigned char ch = (unsigned char)model_char_at(i);
-
-        // Översätt intern Latin-1 till UTF-8
-        if (ch == 0xE5) { fputc(0xC3, file); fputc(0xA5, file); }      // å
-        else if (ch == 0xE4) { fputc(0xC3, file); fputc(0xA4, file); } // ä
-        else if (ch == 0xF6) { fputc(0xC3, file); fputc(0xB6, file); } // ö
-        else if (ch == 0xC5) { fputc(0xC3, file); fputc(0x85, file); } // Å
-        else if (ch == 0xC4) { fputc(0xC3, file); fputc(0x84, file); } // Ä
-        else if (ch == 0xD6) { fputc(0xC3, file); fputc(0x96, file); } // Ö
-        else if (ch >= 32 || ch == '\n') {
-            fputc(ch, file); // Standard ASCII
-        }
+        write_internal_to_utf8(ch, file);
     }
+
     fclose(file);
 }
 
