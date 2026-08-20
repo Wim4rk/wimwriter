@@ -890,43 +890,109 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             }
             break;
 
-        case STATE_NAMING_FILE:
-            if (c > 0) {
-                if (c == '\n') {
-                    if(access(current_filename, F_OK) == 0) {
-                        char warning_text[300];
-                        snprintf(warning_text, sizeof(warning_text), "Skriv över fil: '%s'?", current_filename);
-                        render_status_bar(warning_text, target_addr);
-                        current_state = STATE_CONFIRM_OVERWRITE;
+            case STATE_NAMING_FILE:
+                if (c > 0) {
+                    if (c == '\n') {
+                        if (filename_len == 0) {
+                            // Inget namn angett, trigga raderingsfrågan
+                            render_status_bar("Slänga det osparade dokumentet? (J/N)", target_addr);
+                            current_state = STATE_CONFIRM_DISCARD;
+                        }
+                        else if (access(current_filename, F_OK) == 0) {
+                            char warning_text[300];
+                            snprintf(warning_text, sizeof(warning_text), "Skriv över fil: '%s'?", current_filename);
+                            render_status_bar(warning_text, target_addr);
+                            current_state = STATE_CONFIRM_OVERWRITE;
+                        } else {
+                            save_to_sd(current_filename, target_addr);
+
+                            // Fånga upp om vi var på väg någonstans
+                            if (pending_exit_key == KEY_F3) {
+                                scan_directory_for_files();
+                                browser_selected_index = 0;
+                                browser_scroll_offset = 0;
+                                show_file_browser(target_addr);
+                                current_state = STATE_FILE_BROWSER;
+                            } else if (pending_exit_key == KEY_F4) {
+                                strncpy(previous_filename, current_filename, sizeof(previous_filename));
+                                model_init();
+                                memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
+                                *cursor_row = JUMP_LINES;
+                                *cursor_col = 0;
+                                clear_filename_buffer();
+                                just_created_new_file = true;
+                                stitch_and_render_screen(text_buffer, target_addr);
+                                render_status_bar("Ny fil.", target_addr);
+                                current_state = STATE_EDITING;
+                            } else {
+                                hide_status_bar_and_redraw(target_addr);
+                                current_state = STATE_EDITING;
+                            }
+                        }
+                    }
+                    else if (c == 127) {
+                        if (is_suggested_name) {
+                            clear_filename_buffer();
+                            is_suggested_name = false;
+                        } else {
+                            remove_last_char_from_filename();
+                        }
+                        update_status_bar_visuals(target_addr);
+                    }
+                    else {
+                        if (is_suggested_name) {
+                            clear_filename_buffer();
+                            is_suggested_name = false;
+                        }
+                        append_char_to_filename(c);
+                        update_status_bar_visuals(target_addr);
+                    }
+                }
+                else if (key_code == KEY_ESC) {
+                    hide_status_bar_and_redraw(target_addr);
+                    current_state = STATE_EDITING;
+                }
+                break;
+
+            case STATE_CONFIRM_DISCARD:
+                if (c == 'j' || c == 'J') {
+                    // Töm dokumentet
+                    model_init();
+                    memset(text_buffer, ' ', ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS);
+                    *cursor_row = JUMP_LINES;
+                    *cursor_col = 0;
+                    clear_filename_buffer();
+                    just_created_new_file = true;
+
+                    if (pending_exit_key == KEY_F3) {
+                        scan_directory_for_files();
+                        if (total_files_found > 0) {
+                            browser_selected_index = 0;
+                            browser_scroll_offset = 0;
+                            show_file_browser(target_addr);
+                            current_state = STATE_FILE_BROWSER;
+                        } else {
+                            stitch_and_render_screen(text_buffer, target_addr);
+                            current_state = STATE_EDITING;
+                        }
                     } else {
-                        save_to_sd(current_filename, target_addr);
-                        hide_status_bar_and_redraw(target_addr);
+                        stitch_and_render_screen(text_buffer, target_addr);
+                        render_status_bar("Dokumentet slängdes. Ny fil.", target_addr);
                         current_state = STATE_EDITING;
                     }
+                    pending_exit_key = 0;
                 }
-                else if (c == 127) {
-                    if (is_suggested_name) {
-                        clear_filename_buffer();
-                        is_suggested_name = false;
-                    } else {
-                        remove_last_char_from_filename();
-                    }
+                else if (c == 'n' || c == 'N') {
+                    is_suggested_name = true;
+                    generate_default_filename();
                     update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
                 }
-                else {
-                    if (is_suggested_name) {
-                        clear_filename_buffer();
-                        is_suggested_name = false;
-                    }
-                    append_char_to_filename(c);
-                    update_status_bar_visuals(target_addr);
+                else if (key_code == KEY_ESC) {
+                    hide_status_bar_and_redraw(target_addr);
+                    current_state = STATE_EDITING;
                 }
-            }
-            else if (key_code == KEY_ESC) {
-                hide_status_bar_and_redraw(target_addr);
-                current_state = STATE_EDITING;
-            }
-            break;
+                break;
         case STATE_CONFIRM_OVERWRITE:
             if (c == 'j' || c == 'J') {
                 save_to_sd(current_filename, target_addr);
