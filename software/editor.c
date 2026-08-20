@@ -317,19 +317,28 @@ static void show_file_browser(UDOUBLE target_addr) {
     start_local_y -= (FONT_H + 30); // Skapa marginal ned till filerna
 
     // 3. Loopa ut filerna
+    // Max 24 tecken för filnamnet för att markören ska rymmas i marginalen
+    int max_visning = 24;
+
     for (int i = 0; i < BROWSER_MAX_VISIBLE; i++) {
         int file_idx = browser_scroll_offset + i;
         if (file_idx >= total_files_found) break;
 
         char display_text[300];
+
+        // Trunkera filnamnet via %.*s
         if (file_idx == browser_selected_index) {
-            snprintf(display_text, sizeof(display_text), "-> %s", file_list[file_idx].filename);
+            snprintf(display_text, sizeof(display_text), "-> %.*s", max_visning, file_list[file_idx].filename);
         } else {
-            snprintf(display_text, sizeof(display_text), "   %s", file_list[file_idx].filename);
+            // Tre mellanslag bevarar indenteringen
+            snprintf(display_text, sizeof(display_text), "   %.*s", max_visning, file_list[file_idx].filename);
         }
 
         int len = strlen(display_text);
-        int file_local_x = box_w - 40 - FONT_W;
+
+        // Flytta ut texten i den visuella vänstermarginalen (8 pixlar från kanten).
+        // Eftersom skärmen är fysiskt roterad räknar vi från buffertens högerkant.
+        int file_local_x = box_w - 8 - FONT_W;
 
         for (int c = 0; c < len; c++) {
             unsigned char uc = (unsigned char)display_text[c];
@@ -346,7 +355,7 @@ static void show_file_browser(UDOUBLE target_addr) {
         start_local_y -= (FONT_H + 15);
     }
 
-    // Rita ut hela bufferten till skärmen i A2-läget
+    // 4. Skicka hela bufferten till skärmen i A2-läget
     send_and_display_buffer(browser_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
 }
 
