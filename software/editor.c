@@ -578,6 +578,8 @@ static void show_commit_box(UDOUBLE target_addr) {
 void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer, int *cursor_row, int *cursor_col, bool more_keys_waiting) {
     if (ev->type != EV_KEY) return;
 
+    if(e->value == 0) return;
+
     int key_code = ev->code;
     char c = keyboard_get_char(ev);
 
