@@ -183,13 +183,6 @@ static int compare_file_entries(const void *a, const void *b) {
     return 0;
 }
 
-// Sorteringsfunktion för bokstavsordning
-static int compare_alphabetical(const void *a, const void *b) {
-    FileEntry *entry_a = (FileEntry *)a;
-    FileEntry *entry_b = (FileEntry *)b;
-    return strcasecmp(entry_a->filename, entry_b->filename);
-}
-
 static const char* get_user_home_dir(void) {
     const char *sudo_user = getenv("SUDO_USER");
     if (sudo_user != NULL) {
@@ -879,6 +872,18 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
                 break;
 
+            case STATE_CONFIRM_OVERWRITE:
+                if (c == 'j' || c == 'J') {
+                    save_to_sd(current_filename, target_addr);
+                    hide_status_bar_and_redraw(target_addr);
+                    current_state = STATE_EDITING;
+                }
+                else if (c == 'n' || c == 'N') {
+                    update_status_bar_visuals(target_addr);
+                    current_state = STATE_NAMING_FILE;
+                }
+                break;
+
             case STATE_CONFIRM_DISCARD:
                 if (c == 'j' || c == 'J') {
                     // Töm dokumentet
@@ -918,17 +923,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     current_state = STATE_EDITING;
                 }
                 break;
-        case STATE_CONFIRM_OVERWRITE:
-            if (c == 'j' || c == 'J') {
-                save_to_sd(current_filename, target_addr);
-                hide_status_bar_and_redraw(target_addr);
-                current_state = STATE_EDITING;
-            }
-            else if (c == 'n' || c == 'N') {
-                update_status_bar_visuals(target_addr);
-                current_state = STATE_NAMING_FILE;
-            }
-            break;
+
             case STATE_GIT_COMMIT:
                 if (c > 0) {
                     if (c == '\n') {
@@ -965,59 +960,17 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     current_state = STATE_EDITING;
                 }
                 break;
-                case STATE_CONFIRM_OVERWRITE:
-                    if (c == 'j' || c == 'J') {
-                        save_to_sd(current_filename, target_addr);
-                        hide_status_bar_and_redraw(target_addr);
-                        current_state = STATE_EDITING;
-                    }
-                    else if (c == 'n' || c == 'N') {
-                        update_status_bar_visuals(target_addr);
-                        current_state = STATE_NAMING_FILE;
-                    }
-                    break;
 
-                case STATE_GIT_COMMIT:
-                    if (c > 0) {
-                        if (c == '\n') {
-                            // Städa bort rutan från skärmen
-                            hide_help_box_and_redraw(text_buffer, target_addr);
-                            current_state = STATE_EDITING;
+        } // Avslutar switch (current_state)
 
-                            // Tvätta texten och påbörja synkningen
-                            char safe_msg[256];
-                            sanitize_string(commit_message, safe_msg, sizeof(safe_msg));
-                            sync_to_git(safe_msg, target_addr);
-                        }
-                        else if (c == 127) { // Backspace
-                            if (commit_len > 0) {
-                                commit_len--;
-                                commit_message[commit_len] = '\0';
-                                show_commit_box(target_addr);
-                            }
-                        }
-                        else { // Standardinmatning
-                            if (commit_len < sizeof(commit_message) - 1) {
-                                commit_message[commit_len] = c;
-                                commit_len++;
-                                commit_message[commit_len] = '\0';
-                                show_commit_box(target_addr);
-                            }
-                        }
-                    }
-                    else if (key_code == KEY_ESC) {
-                        hide_help_box_and_redraw(text_buffer, target_addr);
-                        current_state = STATE_EDITING;
-                    }
-                    break;
-            }
-    }
-    if (c == '\n') {
-        putchar('\n');
-    } else if (c == 127) {
-        printf("\b \b");
-    } else if (c >= 32 && c <= 126) {
-        putchar(c);
-    }
-    fflush(stdout);
-}
+        // Felsökningsutskrift i terminalen
+        if (c == '\n') {
+            putchar('\n');
+        } else if (c == 127) {
+            printf("\b \b");
+        } else if (c >= 32 && c <= 126) {
+            putchar(c);
+        }
+        fflush(stdout);
+
+    } // Avslutar funktionen handle_input
