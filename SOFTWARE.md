@@ -77,8 +77,9 @@ Fullständig uppdatering av skärmen, INIT(Mode 0) eller GC16?. Skärmen rensas 
 
 ### F9 - Synkronisera
 
-* F9 (Standard Synk): Kör det skript du redan definierat. WiFi slås på, ansluter till Tailscale, rsync jämför och synkroniserar filer. Skrivning kan fortsätta under synkronisering.
-* Shift + F9: (Arkivera och Radera): Detta triggar den destruktiva arkiveringen. Bekräftelse i gränssnittet: När Ctrl + F9 trycks ned, pausas editorn och statusraden kräver en bekräftelse: Arkivera till NAS och radera lokalt? (J/N). Säker rsync-radering: Om du trycker 'J', aktiveras din nätverksrutin (WiFi on, vänta på Tailscale). Vi använder sedan kommandot rsync men lägger till flaggan --remove-source-files.  
+* F9 (Standard Synk): Kör det skript du redan definierat. WiFi slås på, ansluter till Tailscale.
+* Shift + F9: (Arkivera och Radera): Detta triggar den destruktiva arkiveringen. Bekräftelse i gränssnittet: När Ctrl + F9 trycks ned, pausas editorn och statusraden kräver en bekräftelse: Radera dokument? (J/N).
+* Git commit: prompta användaren att skriva en commit-beskrivning och genomför sedan commit.
 
 ### F10 - WiFi på / av
 
