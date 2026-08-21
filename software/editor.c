@@ -22,6 +22,10 @@ time_t status_bar_timestamp = 0;
 bool is_wifi_active = false;
 bool is_insert_mode = true;
 
+bool prompt_visible = false;
+int prompt_px = 0;
+int prompt_py = 0;
+
 EditorState current_state = STATE_EDITING;
 
 #define RENDER_THRESHOLD 8
