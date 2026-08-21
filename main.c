@@ -131,7 +131,7 @@ int main() {
         ev_epoll.data.fd = kb_fd;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, kb_fd, &ev_epoll);
 
-    bool prompt_visible = false;
+    prompt_visible = false;
     int prompt_px = 0, prompt_py = 0;
     int epoll_timeout_ms = 300; // Kort timeout för catch-up
     int prompt_delay_ticks = 3; // 3 * 300 ms = 900 ms inaktivitet innan prompt
