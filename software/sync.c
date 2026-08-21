@@ -60,17 +60,17 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
 
     char command[512];
 
-    // Vi navigerar till rätt mapp innan vi kör git-kommandona
+    // Vi navigerar till rätt mapp innan vi kör git-kommandona som användaren 'olov'
     if (commit_msg == NULL || strlen(commit_msg) == 0) {
         snprintf(command, sizeof(command),
-            "cd %s && sudo -H -u olov git add . && "
-            "(sudo -H -u olov git diff --staged --quiet || sudo -H -u olov git commit -m 'Auto-sync') && "
-            "sudo -H -u olov git push origin main", SYNC_DIR);
+            "cd %s && sudo -u olov git add . && "
+            "(sudo -u olov git diff --staged --quiet || sudo -u olov git commit -m 'Auto-sync') && "
+            "sudo -u olov git push origin main", SYNC_DIR);
     } else {
         snprintf(command, sizeof(command),
-                    "cd %s && sudo -H -u olov git add . && "
-                    "(sudo -H -u olov git diff --staged --quiet || sudo -H -u olov git commit -m '%s') && "
-                    "sudo -H -u olov git push origin main", SYNC_DIR, commit_msg);
+                    "cd %s && sudo -u olov git add . && "
+                    "(sudo -u olov git diff --staged --quiet || sudo -u olov git commit -m '%s') && "
+                    "sudo -u olov git push origin main", SYNC_DIR, commit_msg);
     }
 
     // 3. Utför push
@@ -119,7 +119,7 @@ void pull_from_git(UDOUBLE target_addr) {
     sleep(3);
 
     char pull_cmd[512];
-    snprintf(pull_cmd, sizeof(pull_cmd), "cd %s && sudo -H -u olov git pull origin main", SYNC_DIR);
+    snprintf(pull_cmd, sizeof(pull_cmd), "cd %s && sudo -u olov git pull origin main", SYNC_DIR);
     system(pull_cmd);
 
     // Stäng enbart av nätverket om vi aktiverade det i denna funktion
