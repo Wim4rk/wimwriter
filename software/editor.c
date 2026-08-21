@@ -701,6 +701,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
     switch (current_state) {
 
         case STATE_EDITING:
+
             if (key_code == KEY_ESC && just_created_new_file) {
                 strncpy(current_filename, previous_filename, sizeof(current_filename));
                 filename_len = strlen(current_filename);
@@ -858,6 +859,195 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 } else {
                     // Om WiFi stängdes av, städa undan raden omedelbart (om inget annat visas).
                     hide_status_bar_and_redraw(target_addr);
+                }
+            }
+            else if (key_code == KEY_LEFT) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                if (document_model.gap_start > 0) {
+                    model_move_cursor_left();
+
+                    // Uppdatera de visuella koordinaterna bakåt
+                    if (*cursor_col > 0) {
+                        (*cursor_col)--;
+                    } else if (*cursor_row > 0) {
+                        (*cursor_row)--;
+                        *cursor_col = MAX_COLS - 1;
+                    }
+
+                    // Stega förbi eventuell tom utfyllnad (padding) från ordflätningen
+                    while ((*cursor_row > 0 || *cursor_col > 0) &&
+                            BUF_AT(text_buffer, *cursor_row, *cursor_col) == ' ') {
+                        if (*cursor_col > 0) {
+                            (*cursor_col)--;
+                        } else if (*cursor_row > 0) {
+                            (*cursor_row)--;
+                            *cursor_col = MAX_COLS - 1;
+                        }
+                    }
+
+                    // Stäng av prompten tillfälligt om den var synlig
+                    if (prompt_visible) {
+                        render_char(' ', prompt_px, prompt_py, target_addr);
+                        prompt_visible = false;
+                    }
+                }
+            }
+            else if (key_code == KEY_RIGHT) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                if (document_model.gap_end < MAX_DOC_SIZE) {
+                    model_move_cursor_right();
+
+                    // Uppdatera de visuella koordinaterna framåt
+                    (*cursor_col)++;
+                    if (*cursor_col >= MAX_COLS) {
+                        *cursor_col = 0;
+                        (*cursor_row)++;
+                    }
+
+                    // Stäng av prompten tillfälligt
+                    if (prompt_visible) {
+                        render_char(' ', prompt_px, prompt_py, target_addr);
+                        prompt_visible = false;
+                    }
+                }
+            }
+            else if (key_code == KEY_END && keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                // Flytta luckan hela vägen till slutet i minnet
+                while (document_model.gap_end < MAX_DOC_SIZE) {
+                    model_move_cursor_right();
+                }
+
+                // Läs om skärmbufferten för att synkronisera vy och modell
+                load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+                refresh_display_full(text_buffer, target_addr);
+            }
+            else if (key_code == KEY_HOME && keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                // Flytta luckan hela vägen till början i minnet
+                while (document_model.gap_start > 0) {
+                    model_move_cursor_left();
+                }
+
+                // Läs om skärmbufferten och uppdatera
+                load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+                refresh_display_full(text_buffer, target_addr);
+            }
+            else if (key_code == KEY_HOME && !keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                // Backa tills vi når kolumn noll
+                while (*cursor_col > 0 && document_model.gap_start > 0) {
+                    model_move_cursor_left();
+                    (*cursor_col)--;
+                }
+
+                if (prompt_visible) {
+                    render_char(' ', prompt_px, prompt_py, target_addr);
+                    prompt_visible = false;
+                }
+            }
+            else if (key_code == KEY_END && !keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                // Gå framåt tills vi träffar en radbrytning eller slutet på skärmbredden
+                while (*cursor_col < MAX_COLS - 1 && document_model.gap_end < MAX_DOC_SIZE) {
+                    char next_c = model_char_at(document_model.gap_start);
+                    if (next_c == '\n') break;
+
+                    model_move_cursor_right();
+                    (*cursor_col)++;
+                }
+
+                if (prompt_visible) {
+                    render_char(' ', prompt_px, prompt_py, target_addr);
+                    prompt_visible = false;
+                }
+            }
+            else if (key_code == KEY_UP) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                if (*cursor_row > 0 && document_model.gap_start > 0) {
+                    int target_col = *cursor_col;
+                    int start_row = *cursor_row;
+
+                    // Stega bakåt tills vi når raden ovanför
+                    while (*cursor_row == start_row && document_model.gap_start > 0) {
+                        model_move_cursor_left();
+
+                        if (*cursor_col > 0) {
+                            (*cursor_col)--;
+                        } else {
+                            (*cursor_row)--;
+                            *cursor_col = MAX_COLS - 1;
+                        }
+
+                        // Stega logiskt förbi eventuell tom utfyllnad (word wrap-padding)
+                        while ((*cursor_row > 0 || *cursor_col > 0) &&
+                                BUF_AT(text_buffer, *cursor_row, *cursor_col) == ' ') {
+                            if (*cursor_col > 0) {
+                                (*cursor_col)--;
+                            } else {
+                                (*cursor_row)--;
+                                *cursor_col = MAX_COLS - 1;
+                            }
+                        }
+                    }
+
+                    // Nu är vi på slutet av raden ovanför. Backa tills vi når rätt kolumn.
+                    while (*cursor_col > target_col && document_model.gap_start > 0) {
+                        char prev_c = model_char_at(document_model.gap_start - 1);
+                        if (prev_c == '\n') break;
+
+                        model_move_cursor_left();
+                        (*cursor_col)--;
+                    }
+
+                    if (prompt_visible) {
+                        render_char(' ', prompt_px, prompt_py, target_addr);
+                        prompt_visible = false;
+                    }
+                }
+            }
+            else if (key_code == KEY_DOWN) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                int target_col = *cursor_col;
+                int start_row = *cursor_row;
+
+                // Stega framåt tills vi når nästa rad
+                while (*cursor_row == start_row && document_model.gap_end < MAX_DOC_SIZE) {
+                    char next_c = model_char_at(document_model.gap_start);
+                    model_move_cursor_right();
+
+                    if (next_c == '\n') {
+                        (*cursor_row)++;
+                        *cursor_col = 0;
+                    } else {
+                        (*cursor_col)++;
+                        if (*cursor_col >= MAX_COLS) {
+                            (*cursor_row)++;
+                            *cursor_col = 0;
+                        }
+                    }
+                }
+
+                // Stega framåt på den nya raden tills vi når target_col eller slutet av raden
+                while (*cursor_col < target_col && document_model.gap_end < MAX_DOC_SIZE) {
+                    char next_c = model_char_at(document_model.gap_start);
+                    if (next_c == '\n') break;
+
+                    model_move_cursor_right();
+                    (*cursor_col)++;
+                }
+
+                if (prompt_visible) {
+                    render_char(' ', prompt_px, prompt_py, target_addr);
+                    prompt_visible = false;
                 }
             }
             else {
