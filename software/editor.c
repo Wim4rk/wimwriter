@@ -29,8 +29,8 @@ EditorState current_state = STATE_EDITING;
 
 // Variabler för filhantering
 static bool is_suggested_name = false;
-static char current_filename[2048] = "";
-static char previous_filename[2048] = "";
+static char current_filename[1024] = "";
+static char previous_filename[1024] = "";
 static int previous_file_index = 0;
 static int current_file_index = 0;
 static int pending_start_col = -1;
@@ -129,7 +129,7 @@ static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
 static void save_to_sd(const char *filename, UDOUBLE target_addr) {
     save_document_to_file(filename);
 
-    char status_text[1050];
+    char status_text[1024];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
 }
@@ -251,7 +251,7 @@ static void scan_directory_for_files(void) {
             // Ignorera dolda filer samt uppåt-navigering (., ..)
             if (dir->d_name[0] == '.') continue;
 
-            char full_path[2048];
+            char full_path[1024];
             snprintf(full_path, sizeof(full_path), "%s/%s", current_path, dir->d_name);
 
             if (stat(full_path, &file_stat) == 0) {
@@ -744,7 +744,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
                     if (keyboard_is_shift_pressed()) {
                         if (strlen(previous_filename) > 0) {
-                            char temp[2048];
+                            char temp[1024];
                             strncpy(temp, current_filename, sizeof(temp));
 
                             // Vi behöver inte spara här igen
@@ -876,7 +876,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             else if (key_code == KEY_RIGHT) {
                 // Stega in i katalogen om markören står på en mapp
                 if (total_files_found > 0 && file_list[browser_selected_index].is_dir) {
-                    char temp_path[2048];
+                    char temp_path[1024];
                     snprintf(temp_path, sizeof(temp_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
                     snprintf(current_path, sizeof(current_path), "%s", temp_path);
 
@@ -908,7 +908,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (total_files_found > 0) {
                     if (file_list[browser_selected_index].is_dir) {
                         // Behandla Enter på en katalog exakt som Pil Höger
-                        char temp_path[2048];
+                        char temp_path[1024];
                         snprintf(temp_path, sizeof(temp_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
                         snprintf(current_path, sizeof(current_path), "%s", temp_path);
 
@@ -965,7 +965,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                             current_state = STATE_CONFIRM_DISCARD;
                         }
                         else if (access(current_filename, F_OK) == 0) {
-                            char warning_text[1050];
+                            char warning_text[1024];
                             snprintf(warning_text, sizeof(warning_text), "Skriv över fil: '%s'?", current_filename);
                             render_status_bar(warning_text, target_addr);
                             current_state = STATE_CONFIRM_OVERWRITE;

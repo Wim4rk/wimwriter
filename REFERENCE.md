@@ -1,5 +1,39 @@
 # Referens #
 
+## Konfigurera uppstart via systemd
+
+Följ dessa steg för att få Linux att boota direkt in i editorn:
+
+Skapa en service-fil:
+Kör följande kommando i terminalen på din Pi:
+sudo nano /etc/systemd/system/wimwriter.service
+
+Lägg in konfigurationen:
+Klistra in nedanstående text. Säkerställ att sökvägen i ExecStart och WorkingDirectory pekar exakt på den plats där din kompilerade binärfil ligger.
+Ini, TOML
+
+[Unit]
+Description=Wimwriter Editor
+After=local-fs.target systemd-user-sessions.service
+
+[Service]
+Type=simple
+ExecStart=/home/pi/wimwriter/main
+WorkingDirectory=/home/pi/wimwriter
+User=root
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
+Aktivera tjänsten:
+Ladda om systemd och aktivera tjänsten så att den aktiveras vid varje uppstart:
+sudo systemctl daemon-reload
+sudo systemctl enable wimwriter.service
+
+Starta om och testa:
+Kör sudo reboot.
+
 ## Nedstängning via terminalen
 
 Eftersom vi redan har kopplat signalhanteraren handle_sigint och handle_shutdown till operativsystemets SIGINT, kan du trigga exakt samma säkra nedstängningsrutin (som sparar, committar, pushar och rensar skärmen) från en SSH-session.
