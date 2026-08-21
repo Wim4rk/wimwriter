@@ -1,24 +1,34 @@
 # Att göra
 
-## Filhantering
+1. Filhantering (Kritiska justeringar)
 
-* Svenska tecken i filnamn renderas egendomligt.
-* Jag behöver kunna låta bli att spara.
-* Vi ska utreda om *git* är en bra väg att gå. Jag är öppen för förslag, men jag funderar på att lägga ett --bare repository på min NAS och jobba över det. Skrivmaskinen behöver klara tre manöver git pull, add och commit - med meddelande. Det skulle underlätta redigering från flera enheter.
+    [ ] Konfigurera om get_full_path och/eller filväljaren så att den aktuella sökvägen (katalogen) inkluderas när en fil skickas till inläsningsbufferten.
+
+    [ ] Åtgärda problemet med time(NULL) när systemet är offline. Alternativ: Installera en fysisk RTC-modul på GPIO (t.ex. DS3231) eller bygg en rutin som hämtar senaste tid från NAS:en vid uppstart.
+
+2. Editor (Navigering)
+
+    [ ] Implementera KEY_LEFT och KEY_RIGHT i STATE_EDITING. Koppla dessa till datamodellens gap-buffert och skärmens utritning.
+
+    [ ] Implementera KEY_UP och KEY_DOWN (kräver en matematisk uträkning av radens längd i minnet).
+
+    [ ] Implementera modifier-tangenter: Ctrl + End, Ctrl + Home, samt Ctrl + Pilar.
+
+3. Display & Utritning (Redigering)
+
+    [ ] Skapa rutinen för stitching vid infogande/radering mitt i texten: Om prompten står mitt i ett stycke och en tangent trycks ned, måste all efterföljande text förskjutas i RAM och skärmen ritas om tyst (lämpligen i A2- eller DU-läge) utan att hela skärmen blinkar till.
+
+4. Hårdvara
+
+    [ ] Fysisk inkoppling av Master Power mellan batteriet och EN-pinnen på Adafruit PowerBoost.
 
 ## Editor
-* Prompten behöver fungera smidigare när jag raderar. Jag tror vi behöver en buffert för radering. Det tar för lång tid att skriva över ett tecken i taget.
+
 * Jag behöver kunna stega prompten och rätta enstaka tecken. Ctrl + End för att nå slutet av filen. Home för att nå radens början. Ctrl + pilar höger och vänster.
-
-## Display
-
-* Hur mycket målas egentligen över när jag raderar? Glyph-rutan? Hela tecken-ytan? Så små uppdateringar som möjligt är att föredra.
-* Ghosting kan bli ett bekymmer... Städa  mer vid jump? Ny fil?
-* Artefakter när jag raderar. (streck i övre kanten av teckenrutan, kanske till och med utanför glyph-rutan?)
 
 ## Hårdvara
 
-* Koppla off/on
+* Starta skrivmaskinen direkt in i editorn. Slå av WiFi.
 * Löd master power (en på batteriladdaren)
 
 *Dokumentet uppdaterat 2026-08-20*

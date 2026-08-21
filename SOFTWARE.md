@@ -47,7 +47,7 @@ Använd funktionsknapparna enligt fastställd praxis.Tänk CUA-standard (Common 
 | F6     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F7     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F8     | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
-| F9     | Synk.     | Synkronisera enligt program/rutin  |
+| F9     | Synk.     | Synkroniserar via git push  |
 | F10    | WiFi      | WiFi på / av |
 | F11    | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
 | F12    | TBD       | (Reserverad för framtida statistik, ordräkning m.m.) |
@@ -77,9 +77,8 @@ Fullständig uppdatering av skärmen, INIT(Mode 0) eller GC16?. Skärmen rensas 
 
 ### F9 - Synkronisera
 
-* F9 (Standard Synk): Kör det skript du redan definierat. WiFi slås på, ansluter till Tailscale.
-* Shift + F9: (Arkivera och Radera): Detta triggar den destruktiva arkiveringen. Bekräftelse i gränssnittet: När Ctrl + F9 trycks ned, pausas editorn och statusraden kräver en bekräftelse: Radera dokument? (J/N).
-* Git commit: prompta användaren att skriva en commit-beskrivning och genomför sedan commit.
+* F9 (Standard Synk): Kör det skript du redan definierat. WiFi slås på, ansluter till Tailscale, git commit och git push genomförs.
+* Shift + F9: (Arkivera och Radera): Detta triggar den destruktiva arkiveringen. Bekräftelse i gränssnittet: När Ctrl + F9 trycks ned, pausas editorn och statusraden kräver en bekräftelse: Radera dokument? (J/N). Dokumentet finns kvar i git-repot för vidare redigering eller kompilering till färdigt manus den vägen.
 
 ### F10 - WiFi på / av
 
@@ -90,7 +89,7 @@ En *manual override* som låter dig slå på/av WiFi, till exempel för administ
 **F2 Sparar fil.** Om ingen fil är skapad, skapa en ny fil och fråga efter filnamnet i statusraden (sparas som).
 **F3 Växla fil.** Växlar mellan dokument i tids-ordning. F3 en gång sparar aktuellt dokument (eller spara som, om ingen fil är skapad) och hoppar till senaste dokumentet, två gånger till näst senaste osv. Enter öppnar filen på skärmen för redigering. Esc återgår till aktuell fil.
 **F4 Ny fil.** Tömmer skrivytan så att användaren kan börja skriva en ny fil.
-**Stänga utan att spara?** Hur uppnår vi det? En funktionsknapp slänger allt och återgår till senast sparat (eller en tom fil).
+**Stänga utan att spara?**
 
 ## Spara state
 
@@ -137,9 +136,7 @@ Detta är saker vi implementerar *om det visar sig möjligt*.
 - Ctrl + X/C ska fungera som förväntat, där markering tas bort och text kopieras till någon form av urklipp.
 - Ctrl + V ska fungera som förväntat, där text från urklipp klistras in på markeringens plats. Uppdateras i DU-läget.
 
-* **Katalogbyte**. Shift + F3 cyklar mellan kataloger och öppnar den senaste fil man jobbat med i respektive katalog. I statusraden visas den aktuella katalogen med filnamn: roman_utkast/kapitel_4.txt.
-
 ---
 *Dokumentet skapat 2026-07-24*
 
-*Dokumentet senast uppdaterat 2026-08-19*
+*Dokumentet senast uppdaterat 2026-08-21*

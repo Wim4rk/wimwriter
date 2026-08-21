@@ -27,6 +27,12 @@ static void ensure_directory_exists(char *filepath) {
 }
 
 static void get_full_path(const char *filename, char *full_path, size_t max_len) {
+    // Om filnamnet redan är en absolut sökväg, använd den direkt.
+    if (filename[0] == '/') {
+        snprintf(full_path, max_len, "%s", filename);
+        return;
+    }
+
     const char *home_dir = NULL;
     const char *sudo_user = getenv("SUDO_USER");
 

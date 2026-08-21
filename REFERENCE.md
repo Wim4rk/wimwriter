@@ -1,5 +1,18 @@
 # Referens #
 
+## Nedstängning via terminalen
+
+Eftersom vi redan har kopplat signalhanteraren handle_sigint och handle_shutdown till operativsystemets SIGINT, kan du trigga exakt samma säkra nedstängningsrutin (som sparar, committar, pushar och rensar skärmen) från en SSH-session.
+
+Gör så här när du vill stänga av maskinen:
+* Tryck F10 på skrivmaskinen för att aktivera WiFi.
+* Logga in via SSH.
+* Kör kommandot pkill -SIGINT wimwriter (byt ut wimwriter mot namnet på din kompilerade binärfil).
+
+Detta skickar avbrottssignalen till C-programmet. Programmet kommer då att fånga signalen, utföra editor_shutdown() och slutligen stänga av Raspberry Pi-enheten helt via systemanropet sudo poweroff.
+
+Du kan därefter slå av din master power-brytare. Vi kan justera tidsfördröjningarna för nätverkskontrollen framöver om det visar sig att Tailscale behöver mer eller mindre tid på sig att etablera anslutningen.
+
 ## Filsystemet
 
 ```

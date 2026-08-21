@@ -36,6 +36,8 @@ static int pending_start_col = -1;
 static int filename_len = 0;
 static char previous_filename[256] = "";
 static bool just_created_new_file = false;
+static char base_path[512] = "";
+static char current_path[512] = "";
 
 static int pending_exit_key = 0;
 
@@ -48,6 +50,7 @@ static int commit_len = 0;
 typedef struct {
     char filename[256];
     time_t last_modified;
+    bool is_dir;
 } FileEntry;
 
 static FileEntry file_list[MAX_FILES_IN_DIR];
@@ -166,21 +169,58 @@ static void clear_filename_buffer(void) {
     filename_len = 0;
 }
 
-static void generate_default_filename(void){
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    snprintf(current_filename, sizeof(current_filename), "wim_%04d%02d%02d_%02d%02d.txt",
-                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
+static bool generate_default_filename(UDOUBLE target_addr) {
+    int highest_num = 0;
+    char search_path[512];
+
+    // Bestäm vilken katalog vi ska söka i
+    if (strlen(current_path) > 0) {
+        snprintf(search_path, sizeof(search_path), "%s", current_path);
+    } else {
+        snprintf(search_path, sizeof(search_path), "%s", base_path);
+    }
+
+    // Öppna katalogen och leta efter det högsta indexet
+    DIR *d = opendir(search_path);
+    if (d) {
+        struct dirent *dir;
+        while ((dir = readdir(d)) != NULL) {
+            int current_num;
+            // Leta efter filnamn som inleds med en siffra följt av _wimwriter
+            if (sscanf(dir->d_name, "%d_wimwriter", &current_num) == 1) {
+                if (current_num > highest_num) {
+                    highest_num = current_num;
+                }
+            }
+        }
+        closedir(d);
+    }
+
+    int next_num = highest_num + 1;
+
+    if (next_num > 99) {
+        clear_filename_buffer();
+        return false; // Gränsen är nådd
+    }
+
+    // Bygg det nya filnamnet
+    if (strlen(current_path) > 0) {
+        snprintf(current_filename, sizeof(current_filename), "%s/%02d_wimwriter.txt", current_path, next_num);
+    } else {
+        snprintf(current_filename, sizeof(current_filename), "%02d_wimwriter.txt", next_num);
+    }
+
     filename_len = strlen(current_filename);
+    return true;
 }
 
-// Sorteringsfunktion för datumordning
+// Sortera filer och mappar enligt bokstavsordning
 static int compare_file_entries(const void *a, const void *b) {
     FileEntry *entry_a = (FileEntry *)a;
     FileEntry *entry_b = (FileEntry *)b;
-    if (entry_a->last_modified < entry_b->last_modified) return 1;
-    if (entry_a->last_modified > entry_b->last_modified) return -1;
-    return 0;
+
+    // Enbart alfabetisk sortering
+    return strcasecmp(entry_a->filename, entry_b->filename);
 }
 
 static const char* get_user_home_dir(void) {
@@ -199,29 +239,36 @@ static void scan_directory_for_files(void) {
     DIR *d;
     struct dirent *dir;
     struct stat file_stat;
-    char dir_path[512];
 
-    const char *home = get_user_home_dir();
-    // Use fallback here?
-    snprintf(dir_path, sizeof(dir_path), "%s/Dokument/writer", home);
+    // Sätt basvägen en gång om den är tom
+    if (strlen(base_path) == 0) {
+        const char *home = get_user_home_dir();
+        snprintf(base_path, sizeof(base_path), "%s/Dokument/writer", home);
+        snprintf(current_path, sizeof(current_path), "%s", base_path);
+    }
 
     total_files_found = 0;
     current_file_index = 0;
 
-    d = opendir(dir_path);
+    d = opendir(current_path);
     if (d) {
         while ((dir = readdir(d)) != NULL && total_files_found < MAX_FILES_IN_DIR) {
-            if (dir->d_name[0] != '.') {
-                if (strstr(dir->d_name, ".txt") != NULL || strstr(dir->d_name, ".md") != NULL) {
-                    // Vi måste bygga hela sökvägen för att stat() ska fungera
-                    char full_path[1024];
-                    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, dir->d_name);
+            // Ignorera dolda filer samt uppåt-navigering (., ..)
+            if (dir->d_name[0] == '.') continue;
 
-                    if (stat(full_path, &file_stat) == 0) {
-                        snprintf(file_list[total_files_found].filename, sizeof(file_list[total_files_found].filename), "%s", dir->d_name);
-                        file_list[total_files_found].last_modified = file_stat.st_mtime;
-                        total_files_found++;
-                    }
+            char full_path[1024];
+            snprintf(full_path, sizeof(full_path), "%s/%s", current_path, dir->d_name);
+
+            if (stat(full_path, &file_stat) == 0) {
+                bool is_directory = S_ISDIR(file_stat.st_mode);
+
+                // Tillåt endast kataloger, .txt och .md
+                if (is_directory || strstr(dir->d_name, ".txt") != NULL || strstr(dir->d_name, ".md") != NULL) {
+                    snprintf(file_list[total_files_found].filename, sizeof(file_list[total_files_found].filename), "%s", dir->d_name);
+                    file_list[total_files_found].last_modified = file_stat.st_mtime;
+                    file_list[total_files_found].is_dir = is_directory;
+
+                    total_files_found++;
                 }
             }
         }
@@ -237,14 +284,14 @@ void open_latest_file(char *text_buffer, int *cursor_row, int *cursor_col, UDOUB
     scan_directory_for_files();
 
     if (total_files_found > 0) {
-        snprintf(current_filename, sizeof(current_filename), "%s", file_list[0].filename);
+        // Inkludera hela sökvägen
+        snprintf(current_filename, sizeof(current_filename), "%s/%s", current_path, file_list[0].filename);
         filename_len = strlen(current_filename);
 
         load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
     } else {
         clear_filename_buffer();
         just_created_new_file = true;
-
         render_status_bar("Ny fil. Spara med F2.", target_addr);
     }
 }
@@ -274,6 +321,9 @@ static void show_file_browser(UDOUBLE target_addr) {
     int phys_x = (SCREEN_WIDTH - box_w) / 2;
     int phys_y = (SCREEN_HEIGHT - box_h) / 2;
 
+    int title_len = strlen(title_text);
+    int current_local_x = box_w - 40 - FONT_W;
+
     static UBYTE browser_buffer[700 * 500];
 
     // Fyll ramen svart (2px) och insidan med vitt (0xF0 för att passa IT8951 A2-läge)
@@ -286,11 +336,17 @@ static void show_file_browser(UDOUBLE target_addr) {
 
     // 1. Rita ut katalogens namn högst upp
     char title_text[300];
-    snprintf(title_text, sizeof(title_text), "[ %s ]", dir_list[current_dir_index]);
-
-    int title_len = strlen(title_text);
-    int current_local_x = box_w - 40 - FONT_W; // Visuellt från vänster
-
+    if (strcmp(current_path, base_path) == 0) {
+        snprintf(title_text, sizeof(title_text), "[ Hem ]");
+    } else {
+        // Leta upp det sista snedstrecket för att enbart visa den aktuella mappens namn
+        char *last_slash = strrchr(current_path, '/');
+        if (last_slash != NULL) {
+            snprintf(title_text, sizeof(title_text), "[ %s ]", last_slash + 1);
+        } else {
+            snprintf(title_text, sizeof(title_text), "[ %s ]", current_path);
+        }
+    }
     // Kopiera in katalogtexten i bufferten
     for (int c = 0; c < title_len; c++) {
         unsigned char uc = (unsigned char)title_text[c];
@@ -589,7 +645,7 @@ void editor_shutdown(UDOUBLE target_addr) {
     if (strlen(current_filename) > 0) {
         save_document_to_file(current_filename);
     } else if (model_get_text_length() > 0) {
-        generate_default_filename();
+        generate_default_filename(target_addr);
         save_document_to_file(current_filename);
     }
 
@@ -642,8 +698,12 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (strlen(current_filename) == 0) {
                     pending_exit_key = 0;
                     is_suggested_name = true;
-                    generate_default_filename();
-                    update_status_bar_visuals(target_addr);
+                    if (generate_default_filename(target_addr)) {
+                        update_status_bar_visuals(target_addr);
+                    } else {
+                        is_suggested_name = false;
+                        render_status_bar("Max 99 filer. Ange namn:", target_addr);
+                    }
                     current_state = STATE_NAMING_FILE;
                 } else {
                     save_to_sd(current_filename, target_addr);
@@ -659,8 +719,12 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (strlen(current_filename) == 0) {
                     pending_exit_key = KEY_F2;
                     is_suggested_name = true;
-                    generate_default_filename();
-                    update_status_bar_visuals(target_addr);
+                    if (generate_default_filename(target_addr)) {
+                        update_status_bar_visuals(target_addr);
+                    } else {
+                        is_suggested_name = false;
+                        render_status_bar("Max 99 filer. Ange namn:", target_addr);
+                    }
                     current_state = STATE_NAMING_FILE;
                 } else {
                     save_to_sd(current_filename, target_addr);
@@ -670,33 +734,39 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (strlen(current_filename) == 0 && model_get_text_length() > 0) {
                     pending_exit_key = KEY_F3;
                     is_suggested_name = true;
-                    generate_default_filename();
-                    update_status_bar_visuals(target_addr);
+                    if (generate_default_filename(target_addr)) {
+                        update_status_bar_visuals(target_addr);
+                    } else {
+                        is_suggested_name = false;
+                        render_status_bar("Max 99 filer. Ange namn:", target_addr);
+                    }
                     current_state = STATE_NAMING_FILE;
                 } else {
+                    // Spara den aktuella filen en gång för alla, om den har ett namn
                     if (strlen(current_filename) > 0) {
                         save_document_to_file(current_filename);
                     }
-                    scan_directory_for_files();
 
-                    if (keyboard_is_ctrl_pressed()) {
-                        if (total_files_found > 1) {
-                            current_file_index = (current_file_index == 0) ? 1 : 0;
-                            snprintf(current_filename, sizeof(current_filename), "%s", file_list[current_file_index].filename);
-                            filename_len = strlen(current_filename);
+                    if (keyboard_is_shift_pressed()) {
+                        if (strlen(previous_filename) > 0) {
+                            char temp[256];
+                            strncpy(temp, current_filename, sizeof(temp));
+
+                            // Vi behöver inte spara här igen
+                            strncpy(current_filename, previous_filename, sizeof(current_filename));
+                            strncpy(previous_filename, temp, sizeof(previous_filename));
+
                             load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
                             refresh_display_full(text_buffer, target_addr);
-                            char status_text[300];
-                            snprintf(status_text, sizeof(status_text), "Öppnad: %s", current_filename);
-                            render_status_bar(status_text, target_addr);
                         }
                     } else {
-                        if (total_files_found > 0) {
-                            browser_selected_index = 0;
-                            browser_scroll_offset = 0;
-                            show_file_browser(target_addr);
-                            current_state = STATE_FILE_BROWSER;
-                        }
+                        // Öppna filväljaren i bokstavsordning
+                        // Skanna katalogen endast när vi faktiskt ska visa filväljaren
+                        scan_directory_for_files();
+                        browser_selected_index = 0;
+                        browser_scroll_offset = 0;
+                        show_file_browser(target_addr);
+                        current_state = STATE_FILE_BROWSER;
                     }
                 }
             }
@@ -704,8 +774,12 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (strlen(current_filename) == 0 && model_get_text_length() > 0) {
                     pending_exit_key = KEY_F4;
                     is_suggested_name = true;
-                    generate_default_filename();
-                    update_status_bar_visuals(target_addr);
+                    if (generate_default_filename(target_addr)) {
+                        update_status_bar_visuals(target_addr);
+                    } else {
+                        is_suggested_name = false;
+                        render_status_bar("Max 99 filer. Ange namn:", target_addr);
+                    }
                     current_state = STATE_NAMING_FILE;
                 } else {
                     if (strlen(current_filename) > 0) {
@@ -726,11 +800,30 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 refresh_display_full(text_buffer, target_addr);
             }
             else if (key_code == KEY_F9) {
-                // Nollställ bufferten och rita upp rutan
-                commit_len = 0;
-                memset(commit_message, 0, sizeof(commit_message));
-                show_commit_box(target_addr);
-                current_state = STATE_GIT_COMMIT;
+                if (keyboard_is_shift_pressed()) {
+                    // Manuell Git Pull
+                    pull_from_git(target_addr);
+
+                    // Ladda om den aktuella filen från SD-kortet för att fånga upp ändringarna
+                    if (strlen(current_filename) > 0) {
+                        load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+
+                        // Rita upp skärmen på nytt i GC16-läge
+                        refresh_display_full(text_buffer, target_addr);
+
+                        char status_msg[300];
+                        snprintf(status_msg, sizeof(status_msg), "Uppdaterad: %s", current_filename);
+                        render_status_bar(status_msg, target_addr);
+                    } else {
+                        render_status_bar("Synkronisering (pull) slutförd.", target_addr);
+                    }
+                } else {
+                    // Standard Git Commit & Push
+                    commit_len = 0;
+                    memset(commit_message, 0, sizeof(commit_message));
+                    show_commit_box(target_addr);
+                    current_state = STATE_GIT_COMMIT;
+                }
             }
             else if (key_code == KEY_F10) {
                 toggle_wifi();
@@ -786,38 +879,55 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
             }
             else if (key_code == KEY_RIGHT) {
-                if (total_dirs_found > 1) {
-                    current_dir_index = (current_dir_index + 1) % total_dirs_found;
+                // Stega in i katalogen om markören står på en mapp
+                if (total_files_found > 0 && file_list[browser_selected_index].is_dir) {
+                    snprintf(current_path, sizeof(current_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
 
-                    // Läs in den nya katalogens filer
                     scan_directory_for_files();
                     browser_selected_index = 0;
                     browser_scroll_offset = 0;
-
                     show_file_browser(target_addr);
                 }
             }
             else if (key_code == KEY_LEFT) {
-                if (total_dirs_found > 1) {
-                    current_dir_index = (current_dir_index - 1 + total_dirs_found) % total_dirs_found;
+                // Stega uppåt, men stoppa om vi redan är i 'Hem' (base_path)
+                if (strcmp(current_path, base_path) != 0) {
+                    char *last_slash = strrchr(current_path, '/');
 
-                    // Läs in den nya katalogens filer
+                    if (last_slash != NULL && last_slash != current_path) {
+                        *last_slash = '\0'; // Klipp strängen vid sista snedstrecket
+                    } else {
+                        // Säkerhetsnät om strängen är skadad
+                        snprintf(current_path, sizeof(current_path), "%s", base_path);
+                    }
+
                     scan_directory_for_files();
                     browser_selected_index = 0;
                     browser_scroll_offset = 0;
-
                     show_file_browser(target_addr);
                 }
             }
             else if (c == '\n') {
-                // Enter öppnar filen
-                snprintf(current_filename, sizeof(current_filename), "%s", file_list[browser_selected_index].filename);
-                filename_len = strlen(current_filename);
+                if (total_files_found > 0) {
+                    if (file_list[browser_selected_index].is_dir) {
+                        // Behandla Enter på en katalog exakt som Pil Höger
+                        snprintf(current_path, sizeof(current_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
 
-                load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
-                refresh_display_full(text_buffer, target_addr); // Rensar GUI-rutan
+                        scan_directory_for_files();
+                        browser_selected_index = 0;
+                        browser_scroll_offset = 0;
+                        show_file_browser(target_addr);
+                    } else {
+                        // Det är en textfil. Ladda in den med absolut sökväg.
+                        snprintf(current_filename, sizeof(current_filename), "%s/%s", current_path, file_list[browser_selected_index].filename);
+                        filename_len = strlen(current_filename);
 
-                current_state = STATE_EDITING;
+                        load_file_into_buffer(current_filename, text_buffer, cursor_row, cursor_col, target_addr);
+
+                        refresh_display_full(text_buffer, target_addr);
+                        current_state = STATE_EDITING;
+                    }
+                }
             }
             break;
 
@@ -953,8 +1063,12 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 }
                 else if (c == 'n' || c == 'N') {
                     is_suggested_name = true;
-                    generate_default_filename();
-                    update_status_bar_visuals(target_addr);
+                    if (generate_default_filename(target_addr)) {
+                        update_status_bar_visuals(target_addr);
+                    } else {
+                        is_suggested_name = false;
+                        render_status_bar("Max 99 filer. Ange namn:", target_addr);
+                    }
                     current_state = STATE_NAMING_FILE;
                 }
                 else if (key_code == KEY_ESC) {

@@ -94,3 +94,29 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
         toggle_wifi();
     }
 }
+
+void pull_from_git(UDOUBLE target_addr) {
+    render_status_bar("Hämtar ändringar från git...", target_addr);
+
+    // 1. Slå på WiFi om det är avstängt
+    if (!is_wifi_active) {
+        toggle_wifi();
+    }
+
+    // 2. Vänta in nätverk och Tailscale
+    int retries = 10;
+    while (!get_actual_wifi_status() && retries > 0) {
+        sleep(1);
+        retries--;
+    }
+    sleep(3);
+
+    // 3. Hämta ändringar
+    // Vi förutsätter att den lokala arbetskatalogen är ren (inga pågående konflikter vid uppstart).
+    system("cd ~/Dokument/writer && git pull origin main");
+
+    // 4. Stäng av WiFi
+    if (is_wifi_active) {
+        toggle_wifi();
+    }
+}

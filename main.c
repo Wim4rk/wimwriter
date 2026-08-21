@@ -44,7 +44,7 @@ void handle_shutdown(int sig) {
     cleanup_display();
 
     // Stäng av operativsystemet mjukt
-    system("sudo poweroff");
+    // system("sudo poweroff"); // Lägg till när testningen är avklarad
     exit(0);
 }
 
@@ -93,9 +93,11 @@ int main() {
 
     printf("Initierar IT8951-display via SPI...\n");
     init_display(&target_addr);
+    global_target_addr = target_addr;
 
     printf("Kopplar upp tangentbord...\n");
     int kb_fd = keyboard_init(KEYBOARD_DEVICE);
+    global_kb_fd = kb_fd;
     if (kb_fd < 0) {
         printf("Kunde inte öppna tangentbordet (sudo?).\n");
         cleanup_display();
@@ -122,10 +124,11 @@ int main() {
 
     // Initiera epoll
     int epoll_fd = epoll_create1(0);
+    global_epoll_fd = epoll_fd;
     struct epoll_event ev_epoll, events[MAX_EVENTS];
         ev_epoll.events = EPOLLIN;
-        ev_epoll.data.fd = global_kb_fd;
-        epoll_ctl(global_epoll_fd, EPOLL_CTL_ADD, global_kb_fd, &ev_epoll);
+        ev_epoll.data.fd = kb_fd;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, kb_fd, &ev_epoll);
 
     bool prompt_visible = false;
     int prompt_px = 0, prompt_py = 0;
