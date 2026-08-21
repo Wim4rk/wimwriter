@@ -28,6 +28,9 @@ char text_buffer[ABSOLUTE_MAX_ROWS * ABSOLUTE_MAX_COLS];
 
 void handle_sigint(int sig) {
     printf("\nAvslutar programmet säkert. Frigör SPI och GPIO...\n");
+
+    editor_shutdown(global_target_addr);
+
     if (global_epoll_fd != -1) close(global_epoll_fd);
     if (global_kb_fd != -1) keyboard_close(global_kb_fd);
     cleanup_display();
