@@ -28,5 +28,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 void editor_flush_queue(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr);
 void open_latest_file(char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 void editor_shutdown(UDOUBLE target_addr);
+void editor_handle_idle(int idle_ticks, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr);
 
 #endif

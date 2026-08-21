@@ -20,6 +20,7 @@ bool status_bar_visible = false;
 time_t status_bar_timestamp = 0;
 
 bool is_wifi_active = false;
+bool is_insert_mode = true;
 
 EditorState current_state = STATE_EDITING;
 
@@ -43,6 +44,8 @@ static int pending_exit_key = 0;
 
 static int browser_selected_index = 0;
 static int browser_scroll_offset = 0;
+
+static bool is_mid_text_edit = false;
 
 static char commit_message[256] = "";
 static int commit_len = 0;
@@ -118,6 +121,13 @@ static void show_help_box(UDOUBLE target_addr) {
     }
 
     send_and_display_buffer(help_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
+}
+
+void editor_handle_idle(int idle_ticks, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // Om vi har redigerat mitt i texten och tagit en kort paus, rita om skärmen
+    if (is_mid_text_edit && idle_ticks >= 2) {
+        restore_hidden_text(text_buffer, *cursor_row, *cursor_col, target_addr);
+    }
 }
 
 static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
@@ -405,36 +415,66 @@ static void show_file_browser(UDOUBLE target_addr) {
         int file_local_x = box_w - 8 - FONT_W;
 
         for (int c = 0; c < len; c++) {
-            for (int c = 0; c < len; c++) {
-                unsigned char uc = (unsigned char)display_text[c];
+            unsigned char uc = (unsigned char)display_text[c];
 
-                // Fånga upp UTF-8 från filsystemet och konvertera till intern Latin-1
-                if (uc == 0xC3 && display_text[c+1] != '\0') {
-                    unsigned char next_ch = (unsigned char)display_text[c+1];
-                    if (next_ch == 0xA5) uc = 0xE5;      // å
-                    else if (next_ch == 0xA4) uc = 0xE4; // ä
-                    else if (next_ch == 0xB6) uc = 0xF6; // ö
-                    else if (next_ch == 0x85) uc = 0xC5; // Å
-                    else if (next_ch == 0x84) uc = 0xC4; // Ä
-                    else if (next_ch == 0x96) uc = 0xD6; // Ö
-                    c++; // Hoppa över nästa byte i strängen
-                }
-
-                if (uc >= 32) {
-                    const UBYTE *glyph = pre_flipped_glyphs[uc];
-                for (int h = 0; h < FONT_H; h++) {
-                    memcpy(&browser_buffer[(start_local_y + h) * box_w + file_local_x],
-                           &glyph[h * FONT_W],
-                           FONT_W);
-                }
+            // Fånga upp UTF-8 från filsystemet och konvertera till intern Latin-1
+            if (uc == 0xC3 && display_text[c+1] != '\0') {
+                unsigned char next_ch = (unsigned char)display_text[c+1];
+                if (next_ch == 0xA5) uc = 0xE5;      // å
+                else if (next_ch == 0xA4) uc = 0xE4; // ä
+                else if (next_ch == 0xB6) uc = 0xF6; // ö
+                else if (next_ch == 0x85) uc = 0xC5; // Å
+                else if (next_ch == 0x84) uc = 0xC4; // Ä
+                else if (next_ch == 0x96) uc = 0xD6; // Ö
+                c++; // Hoppa över nästa byte i strängen
             }
-            file_local_x -= FONT_W;
+
+            if (uc >= 32) {
+                const UBYTE *glyph = pre_flipped_glyphs[uc];
+            for (int h = 0; h < FONT_H; h++) {
+                memcpy(&browser_buffer[(start_local_y + h) * box_w + file_local_x],
+                        &glyph[h * FONT_W],
+                        FONT_W);
+            }
         }
+        file_local_x -= FONT_W;
+
         start_local_y -= (FONT_H + 15);
     }
 
     // 4. Skicka hela bufferten till skärmen i A2-läget
     send_and_display_buffer(browser_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
+}
+
+static void restore_hidden_text(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr) {
+    if (!is_mid_text_edit) return;
+
+    int r = cursor_row;
+    int c = cursor_col;
+
+    // Läs in tecknen som ligger efter luckan i datamodellen
+    for (int i = document_model.gap_end; i < MAX_DOC_SIZE; i++) {
+        char ch = document_model.data[i];
+
+        if (ch == '\n') {
+            r++;
+            c = 0;
+        } else {
+            BUF_AT(text_buffer, r, c) = ch;
+            c++;
+            if (c >= MAX_COLS) {
+                r++;
+                c = 0;
+            }
+        }
+
+        // Rita inte utanför skärmens dimensioner
+        if (r >= MAX_ROWS) break;
+    }
+
+    // Uppdatera skärmen tyst via A2-läget
+    stitch_and_render_screen(text_buffer, target_addr);
+    is_mid_text_edit = false;
 }
 
 
@@ -444,8 +484,16 @@ static void process_text_input(char c, char *text_buffer, int *cursor_row, int *
     bool is_ctrl_bs = (c == 127 && keyboard_is_ctrl_pressed());
 
     if (!is_ctrl_bs) {
-        if (c == 127) model_delete_char();
-        else if (uc >= 32 || c == '\n') model_insert_char(c);
+        if (c == 127) {
+            model_delete_char();
+        } else if (uc >= 32 || c == '\n') {
+            // Radbrytningar (Enter) hanteras alltid som Insert
+            if (is_insert_mode || c == '\n') {
+                model_insert_char(c);
+            } else {
+                model_overwrite_char(c);
+            }
+        }
         append_to_temp_file(c);
     }
 
@@ -701,6 +749,14 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
     switch (current_state) {
 
         case STATE_EDITING:
+            // Återställ dold text omedelbart om en navigeringstangent trycks ned
+            if (is_mid_text_edit &&
+                (key_code == KEY_LEFT || key_code == KEY_RIGHT ||
+                key_code == KEY_UP || key_code == KEY_DOWN ||
+                key_code == KEY_HOME || key_code == KEY_END)) {
+
+                restore_hidden_text(text_buffer, *cursor_row, *cursor_col, target_addr);
+            }
 
             if (key_code == KEY_ESC && just_created_new_file) {
                 strncpy(current_filename, previous_filename, sizeof(current_filename));
@@ -858,6 +914,16 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     render_status_bar("", target_addr);
                 } else {
                     // Om WiFi stängdes av, städa undan raden omedelbart (om inget annat visas).
+                    hide_status_bar_and_redraw(target_addr);
+                }
+            }
+            else if (key_code == KEY_INSERT) {
+                is_insert_mode = !is_insert_mode;
+
+                if (is_insert_mode) {
+                    render_status_bar("Insert", target_addr);
+                } else {
+                    // Städar undan "Insert" när vi växlar till Overwrite-läge
                     hide_status_bar_and_redraw(target_addr);
                 }
             }

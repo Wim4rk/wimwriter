@@ -154,6 +154,8 @@ int main() {
             // Spola kön!
             editor_flush_queue(text_buffer, cursor_row, cursor_col, target_addr);
 
+            editor_handle_idle(current_idle_ticks, text_buffer, &cursor_row, &cursor_col, target_addr);
+
             // 1. UTSTÄDAD KONTROLL FÖR STATUSRADEN
             if (status_bar_visible) {
                 time_t current_time = time(NULL);

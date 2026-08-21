@@ -21,6 +21,7 @@ void model_init(void);
 // Textmanipulation
 void model_insert_char(char c);
 void model_delete_char(void);
+void model_overwrite_char(char c);
 
 // Navigering (flyttar luckan i minnet)
 void model_move_cursor_left(void);

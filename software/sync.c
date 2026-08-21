@@ -8,6 +8,8 @@
 #include <string.h>
 #include <time.h>
 
+#define SYNC_DIR "/home/olov/Dokument/writer"
+
 void toggle_wifi(void) {
     // Växla flaggan
     is_wifi_active = !is_wifi_active;
@@ -61,14 +63,14 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     // Vi navigerar till rätt mapp innan vi kör git-kommandona
     if (commit_msg == NULL || strlen(commit_msg) == 0) {
         snprintf(command, sizeof(command),
-                    "cd /home/olov/Dokument/writer && git add . && "
-                    "(git diff --staged --quiet || git commit -m 'Auto-sync') && "
-                    "git push origin main");
+            "cd %s && git add . && "
+            "(git diff --staged --quiet || git commit -m 'Auto-sync') && "
+            "git push origin main", SYNC_DIR);
     } else {
         snprintf(command, sizeof(command),
-                    "cd /home/olov/Dokument/writer && git add . && "
+                    "cd %s && git add . && "
                     "(git diff --staged --quiet || git commit -m '%s') && "
-                    "git push origin main", commit_msg);
+                    "git push origin main", SYNC_DIR, commit_msg);
     }
 
     // 3. Utför push
@@ -78,13 +80,17 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     if (status != 0) {
         char conflict_cmd[512];
         time_t now = time(NULL);
+
+        // Korrigerat: Lade till SYNC_DIR som första variabel för %s
         snprintf(conflict_cmd, sizeof(conflict_cmd),
-                    "cd /home/olov/Dokument/writer && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
-                    now, now);
+                    "cd %s && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
+                    SYNC_DIR, now, now);
         system(conflict_cmd);
 
-        // Återgå till main
-        system("cd /home/olov/Dokument/writer && git checkout main");
+        // Korrigerat: Måste använda snprintf även här för att mata in SYNC_DIR
+        char checkout_cmd[512];
+        snprintf(checkout_cmd, sizeof(checkout_cmd), "cd %s && git checkout main", SYNC_DIR);
+        system(checkout_cmd);
 
         render_status_bar("Synk-konflikt: Sparad som ny branch", target_addr);
     } else {
@@ -114,7 +120,9 @@ void pull_from_git(UDOUBLE target_addr) {
     }
     sleep(3);
 
-    system("cd /home/olov/Dokument/writer && git pull origin main");
+    char pull_cmd[512];
+    snprintf(pull_cmd, sizeof(pull_cmd), "cd %s && git pull origin main", SYNC_DIR);
+    system(pull_cmd);
 
     // Stäng enbart av nätverket om vi aktiverade det i denna funktion
     if (was_wifi_off && is_wifi_active) {

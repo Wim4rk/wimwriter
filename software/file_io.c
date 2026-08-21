@@ -111,9 +111,9 @@ void sanitize_string(const char *input, char *output, size_t max_len) {
         else if (ch == 0xC5) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x85; } } // Å
         else if (ch == 0xC4) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x84; } } // Ä
         else if (ch == 0xD6) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x96; } } // Ö
-        // Släpp igenom standard ASCII, ersätt mellanslag med understreck
+        // Släpp igenom standard ASCII, ersätt mellanslag och enkelfnuttar med understreck
         else if (ch >= 32 && ch <= 126) {
-            if (ch == ' ') output[j++] = '_';
+            if (ch == ' ' || ch == '\'') output[j++] = '_';
             else output[j++] = ch;
         }
     }

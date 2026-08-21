@@ -227,11 +227,11 @@ void word_wrap(char *buffer, int *cursor_row, int *cursor_col, UDOUBLE target_ad
     if (break_col > 0) {
         int word_len = *cursor_col - break_col - 1;
 
-        // 1. Plocka ut ordet till RAM och städa (skriv över med '\0') i textmodellen
+        // 1. Plocka ut ordet till RAM och städa i textmodellen
         char temp_str[word_len + 1];
         for (int i = 0; i < word_len; i++) {
             temp_str[i] = buffer[row_start + break_col + 1 + i];
-            buffer[row_start + break_col + 1 + i] = '\0'; // Ändrat från ' ' till '\0'
+            buffer[row_start + break_col + 1 + i] = ' ';
         }
 
         // 2. Uppdatera markören till ny rad och sätt in ordet logiskt i textmodellen

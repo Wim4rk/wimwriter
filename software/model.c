@@ -43,6 +43,24 @@ void model_move_cursor_right(void) {
     }
 }
 
+void model_overwrite_char(char c) {
+    // Om luckan är full har vi nått dokumentets maxstorlek
+    if (document_model.gap_start == document_model.gap_end) {
+        return;
+    }
+
+    // Skriv tecknet och flytta luckans start framåt
+    document_model.data[document_model.gap_start] = c;
+    document_model.gap_start++;
+
+    // Ät upp det gamla tecknet framför luckan, förutsatt att vi
+    // inte har nått slutet av dokumentet eller en radbrytning.
+    if (document_model.gap_end < MAX_DOC_SIZE &&
+        document_model.data[document_model.gap_end] != '\n') {
+        document_model.gap_end++;
+    }
+}
+
 int model_get_text_length(void) {
     return document_model.gap_start + (MAX_DOC_SIZE - document_model.gap_end);
 }
