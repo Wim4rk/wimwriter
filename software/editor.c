@@ -439,7 +439,7 @@ static void show_file_browser(UDOUBLE target_addr) {
     send_and_display_buffer(browser_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
 }
 
-static void restore_hidden_text(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr) {
+void restore_hidden_text(char *text_buffer, int cursor_row, int cursor_col, UDOUBLE target_addr) {
     if (!is_mid_text_edit) return;
 
     int r = cursor_row;
