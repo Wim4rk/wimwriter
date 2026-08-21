@@ -36,8 +36,8 @@ static int current_file_index = 0;
 static int pending_start_col = -1;
 static int filename_len = 0;
 static bool just_created_new_file = false;
-static char base_path[512] = "";
-static char current_path[512] = "";
+static char base_path[1024] = "";
+static char current_path[1024] = "";
 
 static int pending_exit_key = 0;
 
@@ -129,13 +129,13 @@ static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
 static void save_to_sd(const char *filename, UDOUBLE target_addr) {
     save_document_to_file(filename);
 
-    char status_text[300];
+    char status_text[1050];
     snprintf(status_text, sizeof(status_text), "Sparad: %s", filename);
     render_status_bar(status_text, target_addr);
 }
 
 static void update_status_bar_visuals(UDOUBLE target_addr) {
-    char status_text[300];
+    char status_text[1050];
     if (filename_len == 0) {
         snprintf(status_text, sizeof(status_text), "[Tryck Enter för att slänga dokumentet]");
     } else {
@@ -744,7 +744,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
                     if (keyboard_is_shift_pressed()) {
                         if (strlen(previous_filename) > 0) {
-                            char temp[256];
+                            char temp[1024];
                             strncpy(temp, current_filename, sizeof(temp));
 
                             // Vi behöver inte spara här igen
@@ -965,7 +965,7 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                             current_state = STATE_CONFIRM_DISCARD;
                         }
                         else if (access(current_filename, F_OK) == 0) {
-                            char warning_text[300];
+                            char warning_text[1050];
                             snprintf(warning_text, sizeof(warning_text), "Skriv över fil: '%s'?", current_filename);
                             render_status_bar(warning_text, target_addr);
                             current_state = STATE_CONFIRM_OVERWRITE;
