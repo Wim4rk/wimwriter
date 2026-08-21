@@ -120,10 +120,6 @@ int main() {
     printf("Öppnar senaste fil...\n");
     open_latest_file(text_buffer, &cursor_row, &cursor_col, target_addr);
 
-    render_status_bar("Öppnar senaste fil...", target_addr);
-    printf("Öppnar senaste fil...\n");
-    open_latest_file(text_buffer, &cursor_row, &cursor_col, target_addr);
-
     // Tvinga över den inlästa bufferten till IT8951
     refresh_display_full(text_buffer, target_addr);
 
