@@ -29,12 +29,12 @@ EditorState current_state = STATE_EDITING;
 
 // Variabler för filhantering
 static bool is_suggested_name = false;
-static char current_filename[256] = "";
+static char current_filename[1024] = "";
+static char previous_filename[1024] = "";
 static int previous_file_index = 0;
 static int current_file_index = 0;
 static int pending_start_col = -1;
 static int filename_len = 0;
-static char previous_filename[256] = "";
 static bool just_created_new_file = false;
 static char base_path[512] = "";
 static char current_path[512] = "";
@@ -55,11 +55,6 @@ typedef struct {
 
 static FileEntry file_list[MAX_FILES_IN_DIR];
 static int total_files_found = 0;
-
-// Globala variabler för katalogerna
-static char dir_list[20][256];
-static int total_dirs_found = 0;
-static int current_dir_index = 0;
 
 static int pending_bs_start_row = -1; // Spårar raden där raderingen inleddes
 
@@ -332,7 +327,7 @@ static void show_file_browser(UDOUBLE target_addr) {
     int start_local_y = box_h - FONT_H - 40;
 
     // 1. Rita ut katalogens namn högst upp
-    char title_text[300];
+    char title_text[1024];
     if (strcmp(current_path, base_path) == 0) {
         snprintf(title_text, sizeof(title_text), "[ Hem ]");
     } else {
@@ -881,7 +876,9 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             else if (key_code == KEY_RIGHT) {
                 // Stega in i katalogen om markören står på en mapp
                 if (total_files_found > 0 && file_list[browser_selected_index].is_dir) {
-                    snprintf(current_path, sizeof(current_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
+                    char temp_path[1024];
+                    snprintf(temp_path, sizeof(temp_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
+                    snprintf(current_path, sizeof(current_path), "%s", temp_path);
 
                     scan_directory_for_files();
                     browser_selected_index = 0;
@@ -911,7 +908,9 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                 if (total_files_found > 0) {
                     if (file_list[browser_selected_index].is_dir) {
                         // Behandla Enter på en katalog exakt som Pil Höger
-                        snprintf(current_path, sizeof(current_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
+                        char temp_path[1024];
+                        snprintf(temp_path, sizeof(temp_path), "%s/%s", current_path, file_list[browser_selected_index].filename);
+                        snprintf(current_path, sizeof(current_path), "%s", temp_path);
 
                         scan_directory_for_files();
                         browser_selected_index = 0;
