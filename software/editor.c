@@ -428,14 +428,14 @@ static void show_file_browser(UDOUBLE target_addr) {
 
             if (uc >= 32) {
                 const UBYTE *glyph = pre_flipped_glyphs[uc];
-            for (int h = 0; h < FONT_H; h++) {
-                memcpy(&browser_buffer[(start_local_y + h) * box_w + file_local_x],
-                        &glyph[h * FONT_W],
-                        FONT_W);
+                for (int h = 0; h < FONT_H; h++) {
+                    memcpy(&browser_buffer[(start_local_y + h) * box_w + file_local_x],
+                            &glyph[h * FONT_W],
+                            FONT_W);
+                }
             }
+            file_local_x -= FONT_W;
         }
-        file_local_x -= FONT_W;
-
         start_local_y -= (FONT_H + 15);
     }
 
