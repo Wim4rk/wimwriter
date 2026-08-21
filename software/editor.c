@@ -200,9 +200,9 @@ static bool generate_default_filename(UDOUBLE target_addr) {
 
     // Bygg det nya filnamnet
     if (strlen(current_path) > 0) {
-        snprintf(current_filename, sizeof(current_filename), "%s/%02d_wimwriter.txt", current_path, next_num);
+        snprintf(current_filename, sizeof(current_filename), "%s/%02d_wimwriter.md", current_path, next_num);
     } else {
-        snprintf(current_filename, sizeof(current_filename), "%02d_wimwriter.txt", next_num);
+        snprintf(current_filename, sizeof(current_filename), "%02d_wimwriter.md", next_num);
     }
 
     filename_len = strlen(current_filename);
