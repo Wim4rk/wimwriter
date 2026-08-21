@@ -63,14 +63,14 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     // Vi navigerar till rätt mapp innan vi kör git-kommandona
     if (commit_msg == NULL || strlen(commit_msg) == 0) {
         snprintf(command, sizeof(command),
-            "cd %s && git add . && "
-            "(git diff --staged --quiet || git commit -m 'Auto-sync') && "
-            "git push origin main", SYNC_DIR);
+            "cd %s && sudo -H -u olov git add . && "
+            "(sudo -H -u olov git diff --staged --quiet || sudo -H -u olov git commit -m 'Auto-sync') && "
+            "sudo -H -u olov git push origin main", SYNC_DIR);
     } else {
         snprintf(command, sizeof(command),
-                    "cd %s && git add . && "
-                    "(git diff --staged --quiet || git commit -m '%s') && "
-                    "git push origin main", SYNC_DIR, commit_msg);
+                    "cd %s && sudo -H -u olov git add . && "
+                    "(sudo -H -u olov git diff --staged --quiet || sudo -H -u olov git commit -m '%s') && "
+                    "sudo -H -u olov git push origin main", SYNC_DIR, commit_msg);
     }
 
     // 3. Utför push
@@ -81,15 +81,13 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
         char conflict_cmd[512];
         time_t now = time(NULL);
 
-        // Korrigerat: Lade till SYNC_DIR som första variabel för %s
         snprintf(conflict_cmd, sizeof(conflict_cmd),
-                    "cd %s && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
+                    "cd %s && sudo -H -u olov git checkout -b konflikt-%ld && sudo -H -u olov git push -u origin konflikt-%ld",
                     SYNC_DIR, now, now);
         system(conflict_cmd);
 
-        // Korrigerat: Måste använda snprintf även här för att mata in SYNC_DIR
         char checkout_cmd[512];
-        snprintf(checkout_cmd, sizeof(checkout_cmd), "cd %s && git checkout main", SYNC_DIR);
+        snprintf(checkout_cmd, sizeof(checkout_cmd), "cd %s && sudo -H -u olov git checkout main", SYNC_DIR);
         system(checkout_cmd);
 
         render_status_bar("Synk-konflikt: Sparad som ny branch", target_addr);
