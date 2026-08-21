@@ -1201,6 +1201,17 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);
                 }
             }
+            // Rita ut prompten omedelbart vid navigering om inmatningskön är tom
+            if (!more_keys_waiting && (
+                key_code == KEY_LEFT || key_code == KEY_RIGHT ||
+                key_code == KEY_UP || key_code == KEY_DOWN ||
+                key_code == KEY_HOME || key_code == KEY_END)) {
+
+                prompt_px = get_physical_x(*cursor_col);
+                prompt_py = get_physical_y(*cursor_row);
+                render_char('_', prompt_px, prompt_py, target_addr);
+                prompt_visible = true;
+            }
             break;
 
         case STATE_HELP:
