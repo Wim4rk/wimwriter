@@ -1014,11 +1014,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     model_move_cursor_left();
                     (*cursor_col)--;
                 }
-
-                if (prompt_visible) {
-                    render_char(' ', prompt_px, prompt_py, target_addr);
-                    prompt_visible = false;
-                }
             }
             else if (key_code == KEY_END && !keyboard_is_ctrl_pressed()) {
                 editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
@@ -1030,11 +1025,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
 
                     model_move_cursor_right();
                     (*cursor_col)++;
-                }
-
-                if (prompt_visible) {
-                    render_char(' ', prompt_px, prompt_py, target_addr);
-                    prompt_visible = false;
                 }
             }
             else if (key_code == KEY_UP) {
@@ -1113,11 +1103,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     model_move_cursor_right();
                     (*cursor_col)++;
                 }
-
-                if (prompt_visible) {
-                    render_char(' ', prompt_px, prompt_py, target_addr);
-                    prompt_visible = false;
-                }
             }
             else if (key_code == KEY_LEFT && keyboard_is_ctrl_pressed()) {
                 editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
@@ -1156,11 +1141,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                         }
                     }
                 }
-
-                if (prompt_visible) {
-                    render_char(' ', prompt_px, prompt_py, target_addr);
-                    prompt_visible = false;
-                }
             }
             else if (key_code == KEY_RIGHT && keyboard_is_ctrl_pressed()) {
                 editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
@@ -1189,11 +1169,6 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                             *cursor_col = 0;
                         }
                     }
-                }
-
-                if (prompt_visible) {
-                    render_char(' ', prompt_px, prompt_py, target_addr);
-                    prompt_visible = false;
                 }
             }
             else {
