@@ -123,13 +123,6 @@ static void show_help_box(UDOUBLE target_addr) {
     send_and_display_buffer(help_buffer, phys_x, phys_y, box_w, box_h, target_addr, IT8951_A2_MODE);
 }
 
-void editor_handle_idle(int idle_ticks, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
-    // Om vi har redigerat mitt i texten och tagit en kort paus, rita om skärmen
-    if (is_mid_text_edit && idle_ticks >= 2) {
-        restore_hidden_text(text_buffer, *cursor_row, *cursor_col, target_addr);
-    }
-}
-
 static void hide_help_box_and_redraw(char *text_buffer, UDOUBLE target_addr) {
     // Ritar om skärmen baserat på den underliggande textbufferten
     // vilket effektivt skriver över hjälprutan.
@@ -477,6 +470,12 @@ static void restore_hidden_text(char *text_buffer, int cursor_row, int cursor_co
     is_mid_text_edit = false;
 }
 
+void editor_handle_idle(int idle_ticks, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr) {
+    // Om vi har redigerat mitt i texten och tagit en kort paus, rita om skärmen
+    if (is_mid_text_edit && idle_ticks >= 2) {
+        restore_hidden_text(text_buffer, *cursor_row, *cursor_col, target_addr);
+    }
+}
 
 static void process_text_input(char c, char *text_buffer, int *cursor_row, int *cursor_col, UDOUBLE target_addr, bool more_keys_waiting) {
 
