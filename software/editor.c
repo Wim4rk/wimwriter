@@ -345,11 +345,24 @@ static void show_file_browser(UDOUBLE target_addr) {
     // Kopiera in katalogtexten i bufferten
     for (int c = 0; c < title_len; c++) {
         unsigned char uc = (unsigned char)title_text[c];
+
+        // Fånga upp UTF-8 och konvertera till intern Latin-1
+        if (uc == 0xC3 && title_text[c+1] != '\0') {
+            unsigned char next_ch = (unsigned char)title_text[c+1];
+            if (next_ch == 0xA5) uc = 0xE5;      // å
+            else if (next_ch == 0xA4) uc = 0xE4; // ä
+            else if (next_ch == 0xB6) uc = 0xF6; // ö
+            else if (next_ch == 0x85) uc = 0xC5; // Å
+            else if (next_ch == 0x84) uc = 0xC4; // Ä
+            else if (next_ch == 0x96) uc = 0xD6; // Ö
+            c++; // Hoppa över nästa byte
+        }
+
         if (uc >= 32) {
             const UBYTE *glyph = pre_flipped_glyphs[uc];
             for (int h = 0; h < FONT_H; h++) {
                 memcpy(&browser_buffer[(start_local_y + h) * box_w + current_local_x],
-                       &glyph[h * FONT_W], FONT_W);
+                        &glyph[h * FONT_W], FONT_W);
             }
         }
         current_local_x -= FONT_W;
@@ -392,9 +405,23 @@ static void show_file_browser(UDOUBLE target_addr) {
         int file_local_x = box_w - 8 - FONT_W;
 
         for (int c = 0; c < len; c++) {
-            unsigned char uc = (unsigned char)display_text[c];
-            if (uc >= 32) {
-                const UBYTE *glyph = pre_flipped_glyphs[uc];
+            for (int c = 0; c < len; c++) {
+                unsigned char uc = (unsigned char)display_text[c];
+
+                // Fånga upp UTF-8 från filsystemet och konvertera till intern Latin-1
+                if (uc == 0xC3 && display_text[c+1] != '\0') {
+                    unsigned char next_ch = (unsigned char)display_text[c+1];
+                    if (next_ch == 0xA5) uc = 0xE5;      // å
+                    else if (next_ch == 0xA4) uc = 0xE4; // ä
+                    else if (next_ch == 0xB6) uc = 0xF6; // ö
+                    else if (next_ch == 0x85) uc = 0xC5; // Å
+                    else if (next_ch == 0x84) uc = 0xC4; // Ä
+                    else if (next_ch == 0x96) uc = 0xD6; // Ö
+                    c++; // Hoppa över nästa byte i strängen
+                }
+
+                if (uc >= 32) {
+                    const UBYTE *glyph = pre_flipped_glyphs[uc];
                 for (int h = 0; h < FONT_H; h++) {
                     memcpy(&browser_buffer[(start_local_y + h) * box_w + file_local_x],
                            &glyph[h * FONT_W],
