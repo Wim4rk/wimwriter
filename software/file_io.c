@@ -104,11 +104,13 @@ void sanitize_string(const char *input, char *output, size_t max_len) {
             else if (next_ch == 0x96) output[j++] = 'O';
             i++; // Hoppa över nästa byte
         }
-        // Om indatan är i intern Latin-1 (t.ex. inskrivet via editorns tangentbordslogik)
-        else if (ch == 0xE5 || ch == 0xE4) output[j++] = 'a';
-        else if (ch == 0xF6) output[j++] = 'o';
-        else if (ch == 0xC5 || ch == 0xC4) output[j++] = 'A';
-        else if (ch == 0xD6) output[j++] = 'O';
+        // Om indatan är i intern Latin-1, konvertera till UTF-8 för filsystemet
+        else if (ch == 0xE5) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0xA5; } } // å
+        else if (ch == 0xE4) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0xA4; } } // ä
+        else if (ch == 0xF6) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0xB6; } } // ö
+        else if (ch == 0xC5) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x85; } } // Å
+        else if (ch == 0xC4) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x84; } } // Ä
+        else if (ch == 0xD6) { if (j < max_len - 2) { output[j++] = 0xC3; output[j++] = 0x96; } } // Ö
         // Släpp igenom standard ASCII, ersätt mellanslag med understreck
         else if (ch >= 32 && ch <= 126) {
             if (ch == ' ') output[j++] = '_';
