@@ -119,7 +119,7 @@ void pull_from_git(UDOUBLE target_addr) {
     sleep(3);
 
     char pull_cmd[512];
-    snprintf(pull_cmd, sizeof(pull_cmd), "cd %s && git pull origin main", SYNC_DIR);
+    snprintf(pull_cmd, sizeof(pull_cmd), "cd %s && sudo -H -u olov git pull origin main", SYNC_DIR);
     system(pull_cmd);
 
     // Stäng enbart av nätverket om vi aktiverade det i denna funktion
