@@ -1122,7 +1122,12 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
             printf("\b \b");
         } else if (c >= 32 && c <= 126) {
             putchar(c);
-        }
+        } else if ((unsigned char)c == 0xE5) { printf("\xC3\xA5"); } // å
+        else if ((unsigned char)c == 0xE4) { printf("\xC3\xA4"); } // ä
+        else if ((unsigned char)c == 0xF6) { printf("\xC3\xB6"); } // ö
+        else if ((unsigned char)c == 0xC5) { printf("\xC3\x85"); } // Å
+        else if ((unsigned char)c == 0xC4) { printf("\xC3\x84"); } // Ä
+        else if ((unsigned char)c == 0xD6) { printf("\xC3\x96"); } // Ö
         fflush(stdout);
 
     } // Avslutar funktionen handle_input
