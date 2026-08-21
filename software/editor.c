@@ -321,9 +321,6 @@ static void show_file_browser(UDOUBLE target_addr) {
     int phys_x = (SCREEN_WIDTH - box_w) / 2;
     int phys_y = (SCREEN_HEIGHT - box_h) / 2;
 
-    int title_len = strlen(title_text);
-    int current_local_x = box_w - 40 - FONT_W;
-
     static UBYTE browser_buffer[700 * 500];
 
     // Fyll ramen svart (2px) och insidan med vitt (0xF0 för att passa IT8951 A2-läge)
@@ -347,6 +344,9 @@ static void show_file_browser(UDOUBLE target_addr) {
             snprintf(title_text, sizeof(title_text), "[ %s ]", current_path);
         }
     }
+
+    int title_len = strlen(title_text);
+    int current_local_x = box_w - 40 - FONT_W;
     // Kopiera in katalogtexten i bufferten
     for (int c = 0; c < title_len; c++) {
         unsigned char uc = (unsigned char)title_text[c];
