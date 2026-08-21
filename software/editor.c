@@ -1050,6 +1050,83 @@ void handle_input(struct input_event *ev, UDOUBLE target_addr, char *text_buffer
                     prompt_visible = false;
                 }
             }
+            else if (key_code == KEY_LEFT && keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                bool found_word = false;
+
+                while (document_model.gap_start > 0) {
+                    char prev_c = model_char_at(document_model.gap_start - 1);
+
+                    // Identifiera om vi har hittat ett ord, eller om vi ska stanna
+                    if (prev_c != ' ' && prev_c != '\n') {
+                        found_word = true;
+                    } else if (found_word) {
+                        break;
+                    }
+
+                    model_move_cursor_left();
+
+                    if (*cursor_col > 0) {
+                        (*cursor_col)--;
+                    } else if (*cursor_row > 0) {
+                        (*cursor_row)--;
+                        *cursor_col = MAX_COLS - 1;
+                    }
+
+                    // Hantera eventuell utfyllnad från word-wrap i skärmbufferten
+                    while ((*cursor_row > 0 || *cursor_col > 0) &&
+                            BUF_AT(text_buffer, *cursor_row, *cursor_col) == ' ' &&
+                            model_char_at(document_model.gap_start) != ' ') {
+
+                        if (*cursor_col > 0) {
+                            (*cursor_col)--;
+                        } else if (*cursor_row > 0) {
+                            (*cursor_row)--;
+                            *cursor_col = MAX_COLS - 1;
+                        }
+                    }
+                }
+
+                if (prompt_visible) {
+                    render_char(' ', prompt_px, prompt_py, target_addr);
+                    prompt_visible = false;
+                }
+            }
+            else if (key_code == KEY_RIGHT && keyboard_is_ctrl_pressed()) {
+                editor_flush_queue(text_buffer, *cursor_row, *cursor_col, target_addr);
+
+                bool found_word = false;
+
+                while (document_model.gap_end < MAX_DOC_SIZE) {
+                    char next_c = model_char_at(document_model.gap_start);
+
+                    // Identifiera ordgränsen framåt
+                    if (next_c != ' ' && next_c != '\n') {
+                        found_word = true;
+                    } else if (found_word) {
+                        break;
+                    }
+
+                    model_move_cursor_right();
+
+                    if (next_c == '\n') {
+                        (*cursor_row)++;
+                        *cursor_col = 0;
+                    } else {
+                        (*cursor_col)++;
+                        if (*cursor_col >= MAX_COLS) {
+                            (*cursor_row)++;
+                            *cursor_col = 0;
+                        }
+                    }
+                }
+
+                if (prompt_visible) {
+                    render_char(' ', prompt_px, prompt_py, target_addr);
+                    prompt_visible = false;
+                }
+            }
             else {
                 if (c > 0) {
                     process_text_input(c, text_buffer, cursor_row, cursor_col, target_addr, more_keys_waiting);

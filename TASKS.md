@@ -24,6 +24,8 @@
 
 ## Editor
 
+* Visa bara filnamn i status-raden när en fil öppnas eller sparas. Inte hela sökvägen.
+
 * Jag behöver kunna stega prompten och rätta enstaka tecken. Ctrl + End för att nå slutet av filen. Home för att nå radens början. Ctrl + pilar höger och vänster.
 
 ## Hårdvara
