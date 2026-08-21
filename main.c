@@ -87,13 +87,13 @@ int main() {
 
     UDOUBLE target_addr;
 
-    // Stäng av maskinen med tryckknappen
-    bcm2835_gpio_fsel(SHUTDOWN_BTN_PIN, BCM2835_GPIO_FSEL_INPT);
-    bcm2835_gpio_set_pud(SHUTDOWN_BTN_PIN, BCM2835_GPIO_PUD_UP);
-
     printf("Initierar IT8951-display via SPI...\n");
     init_display(&target_addr);
     global_target_addr = target_addr;
+
+    // Stäng av maskinen med tryckknappen
+    bcm2835_gpio_fsel(SHUTDOWN_BTN_PIN, BCM2835_GPIO_FSEL_INPT);
+    bcm2835_gpio_set_pud(SHUTDOWN_BTN_PIN, BCM2835_GPIO_PUD_UP);
 
     printf("Kopplar upp tangentbord...\n");
     int kb_fd = keyboard_init(KEYBOARD_DEVICE);
