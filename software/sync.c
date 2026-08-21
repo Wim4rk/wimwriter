@@ -39,8 +39,10 @@ bool get_actual_wifi_status(void) {
 void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     render_status_bar("Synkroniserar... Ansluter till nätverk.", target_addr);
 
-    // 1. Slå på WiFi om det är avstängt
-    if (!is_wifi_active) {
+    // Kom ihåg om WiFi var avstängt när funktionen anropades
+    bool was_wifi_off = !is_wifi_active;
+
+    if (was_wifi_off) {
         toggle_wifi();
     }
 
@@ -59,12 +61,12 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
     // Vi navigerar till rätt mapp innan vi kör git-kommandona
     if (commit_msg == NULL || strlen(commit_msg) == 0) {
         snprintf(command, sizeof(command),
-                    "cd ~/Dokument/writer && git add . && "
+                    "cd /home/olov/Dokument/writer && git add . && "
                     "(git diff --staged --quiet || git commit -m 'Auto-sync') && "
                     "git push origin main");
     } else {
         snprintf(command, sizeof(command),
-                    "cd ~/Dokument/writer && git add . && "
+                    "cd /home/olov/Dokument/writer && git add . && "
                     "(git diff --staged --quiet || git commit -m '%s') && "
                     "git push origin main", commit_msg);
     }
@@ -77,20 +79,20 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
         char conflict_cmd[512];
         time_t now = time(NULL);
         snprintf(conflict_cmd, sizeof(conflict_cmd),
-                 "cd ~/Dokument/writer && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
-                 now, now);
+                    "cd /home/olov/Dokument/writer && git checkout -b konflikt-%ld && git push -u origin konflikt-%ld",
+                    now, now);
         system(conflict_cmd);
 
         // Återgå till main
-        system("cd ~/Dokument/writer && git checkout main");
+        system("cd /home/olov/Dokument/writer && git checkout main");
 
         render_status_bar("Synk-konflikt: Sparad som ny branch", target_addr);
     } else {
         render_status_bar("Synkronisering slutförd", target_addr);
     }
 
-    // 5. Stäng av WiFi igen för att spara ström
-    if (is_wifi_active) {
+    // Stäng enbart av nätverket om vi aktiverade det i denna funktion
+    if (was_wifi_off && is_wifi_active) {
         toggle_wifi();
     }
 }
@@ -98,12 +100,13 @@ void sync_to_git(const char* commit_msg, UDOUBLE target_addr) {
 void pull_from_git(UDOUBLE target_addr) {
     render_status_bar("Hämtar ändringar från git...", target_addr);
 
-    // 1. Slå på WiFi om det är avstängt
-    if (!is_wifi_active) {
+    // Kom ihåg om WiFi var avstängt när funktionen anropades
+    bool was_wifi_off = !is_wifi_active;
+
+    if (was_wifi_off) {
         toggle_wifi();
     }
 
-    // 2. Vänta in nätverk och Tailscale
     int retries = 10;
     while (!get_actual_wifi_status() && retries > 0) {
         sleep(1);
@@ -111,12 +114,10 @@ void pull_from_git(UDOUBLE target_addr) {
     }
     sleep(3);
 
-    // 3. Hämta ändringar
-    // Vi förutsätter att den lokala arbetskatalogen är ren (inga pågående konflikter vid uppstart).
-    system("cd ~/Dokument/writer && git pull origin main");
+    system("cd /home/olov/Dokument/writer && git pull origin main");
 
-    // 4. Stäng av WiFi
-    if (is_wifi_active) {
+    // Stäng enbart av nätverket om vi aktiverade det i denna funktion
+    if (was_wifi_off && is_wifi_active) {
         toggle_wifi();
     }
 }
