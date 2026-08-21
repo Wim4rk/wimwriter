@@ -10,7 +10,7 @@ DIR_CONFIG = ./lib/Config
 DIR_EPD    = ./lib/e-Paper
 
 # Kompilatorflaggor
-CFLAGS = -Wall -O3 -D BCM -DUSE_BCM2835_LIB
+CFLAGS = -Wall -Wno-format-truncation -O3 -D BCM -DUSE_BCM2835_LIB
 
 LDFLAGS = -lbcm2835 -lm -lrt -lpthread
 
